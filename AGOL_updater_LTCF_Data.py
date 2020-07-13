@@ -1,0 +1,377 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Thu Jun 25 15:31:43 2020
+@author: eneemann
+25 Jun 2020: Created initial code to update AGOL layer (EMN).
+"""
+
+import os, sys
+import time
+import getpass
+import requests
+import random
+import arcpy
+import pandas as pd
+import numpy as np
+import datetime as dt
+
+print(f'Current date and time: {dt.datetime.now()}')
+
+# Start timer and print start time in UTC
+start_time = time.time()
+readable_start = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
+print("The script start time is {}".format(readable_start))
+
+
+# Set variables, get AGOL username and password
+portal_url = arcpy.GetActivePortalURL()
+print(portal_url)
+
+user = getpass.getpass(prompt='    Enter arcgis.com username:\n')
+pw = getpass.getpass(prompt='    Enter arcgis.com password:\n')
+arcpy.SignInToPortal(portal_url, user, pw)
+del pw
+
+###################
+# Geocoding Tools #
+###################
+
+# Create Geocoder class and function -- from AGRC GitHub
+class Geocoder(object):
+
+    _api_key = None
+    _url_template = "http://api.mapserv.utah.gov/api/v1/geocode/{}/{}"
+
+    def __init__(self, api_key):
+        """
+        Create your api key at
+        https://developer.mapserv.utah.gov/secure/KeyManagement
+        """
+        self._api_key = api_key
+
+    def locate(self, street, zone, **kwargs):
+        kwargs["apiKey"] = self._api_key
+
+        r = requests.get(self._url_template.format(street, zone), params=kwargs)
+
+        response = r.json()
+
+        if r.status_code is not 200 or response["status"] is not 200:
+            print("{} {} was not found. {}".format(street, zone, response["message"]))
+            return None
+
+        result = response["result"]
+
+        print("match: {} score [{}]".format(result["score"], result["matchAddress"]))
+        return result["location"]
+
+
+# Function to send fields to geocoder, get x/y values back
+def geocode(row):
+    self = 'AGRC-XXXXXXXXXXXXXX'     # insert correct API token here (home)
+    # result = Geocoder(self).locate(row['Address'], row['ZIP_Code'],
+    result = Geocoder(self).locate(row['Address'], row['City'],
+                                        **{"acceptScore": 70, "spatialReference": 3857})
+    print(result)
+#    if result['status'] == '404':
+    if result is None:
+        row['x'] = '0'
+        row['y'] = '0'
+        row['status'] = 'failed'
+    else:
+        row['x'] = result['x']
+        row['y'] = result['y']
+        row['status'] = 'succeeded'
+        
+    time.sleep(random.random()*.3)
+    return row
+
+
+
+###############
+# Main Script #
+###############
+
+# Updated LTCF_Data is downloaded as CSV from Google Sheet 'https://docs.google.com/spreadsheets/d/1kzowz5CnFqTqzlbuZDec6JgFvLitG20q9C4iKiWpluU/edit#gid=0'
+# CSV file with updates should be named 'COVID_LTCF_Data_latest.csv'
+# Update this 'work_dir' variable with the folder you store the updated CSV in
+work_dir = r'C:\COVID19'
+
+# TEST layer
+# ltcf_service = r'https://services1.arcgis.com/99lidPhWCzftIe9K/arcgis/rest/services/EMN_LTCF_Data_TEST/FeatureServer/0'
+
+# LIVE data layer (LTCF_Data)
+ltcf_service = r'https://services6.arcgis.com/KaHXE9OkiB9e63uE/arcgis/rest/services/LTCF_Data/FeatureServer/273'
+
+
+
+# 1) Load CSV data with updates, prep, and clean up the data
+# Read in updates from CSV that was exported from Google Sheet (LTCF_Data)
+updates = pd.read_csv(os.path.join(work_dir, 'COVID_LTCF_Data_latest.csv'))
+updates.sort_values('ID', inplace=True)
+
+# Drop updates columns that aren't needed
+# Facility_Type will be dropped, then recreated from 'Dashboard Facility Type')
+updates.drop(columns=['Facility_Type', 'Unnamed: 16', 'Notes'],  inplace=True)
+
+# Reaname updates columns to match service
+col_renames = {'ID': 'OID',
+               'Dashboard Facility Type': 'Facility_Type',
+               'Positive Patients': 'Positive_Patients',
+               'Active Positive Patients': 'Active_Positive_Patients', # not in ltcf data
+               'Deceased Patients': 'Deceased_Patients',
+               'Positive HCWs': 'Positive_HCWs',
+               'Positive Patient Description': 'Positive_Patients_Desc'}
+
+updates.rename(col_renames, axis='columns', inplace=True)
+# Strip whitespace from string fields
+updates = updates.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
+# Convert empty spaces to NaNs
+updates = updates.applymap(lambda x: np.nan if isinstance(x, str) and not x else x)
+
+
+# Convert columns to appropriate type for comparisons
+int_fields = ['OID', 'UniqueID', 'Positive_Patients', 'Deceased_Patients',
+              'Positive_HCWs', 'Active_Positive_Patients']
+str_fields = ['Positive_Patients_Desc']
+dt_fields = ['Notification_Date']
+
+# Intermediate step: convert NaNs to 9999 for integers, to 'N' for Resolved_Y_N
+updates[int_fields] = updates[int_fields].fillna(9999)
+updates['Resolved_Y_N'] = updates['Resolved_Y_N'].fillna('N')
+
+# updates[int_fields] = updates[int_fields].astype(int)
+updates[int_fields] = updates[int_fields].astype(int)
+updates[str_fields] = updates[str_fields].astype(str)
+updates[dt_fields] = updates[dt_fields].astype('datetime64[ns]')
+
+
+
+# 2) Load LTCF_Data from feature layer, prep, and clean up the data
+keep_fields = ['OID', 'UniqueID', 'Facility_Name', 'Address',
+                'City', 'ZIP_Code', 'Facility_Type', 'LHD',
+                'Resolved_Y_N', 'Date_Resolved', 'Longitude',
+                'Latitude', 'Notification_Date', 'Positive_Patients',
+                'Deceased_Patients', 'Positive_HCWs', 'Positive_Patients_Desc']
+
+# Reoder columns to updates to match ltcf data
+cols_reorder = keep_fields.copy()
+cols_reorder.append('Active_Positive_Patients')
+updates = updates[cols_reorder]
+
+# Delete in-memory table that will be used (if it already exists)
+if arcpy.Exists('in_memory\\temp_table'):
+    print("Deleting 'in_memory\\temp_table' ...")
+    arcpy.Delete_management('in_memory\\temp_table')
+    time.sleep(3)
+
+# Convert LTCF_Data feature layer into pandas dataframe (table --> numpy array --> dataframe)
+arcpy.conversion.TableToTable(ltcf_service, 'in_memory', 'temp_table')
+table_fields = [f.name for f in arcpy.ListFields('in_memory\\temp_table')]
+
+# Replace Nones in UniqueID field with 0s 
+count = 0
+fields = ['UniqueID']
+with arcpy.da.UpdateCursor('in_memory\\temp_table', fields) as ucursor:
+    print("Looping through rows in temp_table to make updates ...")
+    for row in ucursor:
+        if row[0] == None:
+            row[0] = 0
+            count += 1
+        ucursor.updateRow(row)
+# print(f'Total count of "None" updates is: {count}')
+
+# Correct spelling typo in LTCF_Data feature layer
+arcpy.AlterField_management('in_memory\\temp_table', 'Postive_Patients_Desc', 'Positive_Patients_Desc')
+
+# Convert in-memory table to numpy array and then pandas dataframe
+ltcf_arr = arcpy.da.TableToNumPyArray('in_memory\\temp_table', keep_fields)
+ltcf_df = pd.DataFrame(data=ltcf_arr)
+
+# Strip whitespace from string fields
+ltcf_df = ltcf_df.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
+
+
+
+# 3) Add new spreadsheet rows to LTCF_Data feature layer
+# Subset new rows into separate dataframe and replace 9999s with 0s
+current_ids = list(ltcf_df['UniqueID'])
+# Finds UniqueIDs not in list of current_ids and greater than the max value in current_ids
+updates_geo = updates.loc[(~updates['UniqueID'].isin(current_ids)) & (updates['UniqueID'] > max(current_ids))]
+updates_geo = updates_geo.replace(9999, 0)
+
+
+# Check for need to geocode new rows, either geocode or proceed with change detection
+if updates_geo.shape[0] > 0:
+    # Send new rows to geocoder
+    section_time = time.time()
+    updates_geo = updates_geo.apply(geocode, axis=1)
+    print(f'Time to geocode new rows: {time.time() - section_time}')
+    
+    # Filter down to successful and failed results
+    good_geo = updates_geo.loc[updates_geo['status'] == 'succeeded']
+    bad_geo = updates_geo.loc[updates_geo['status'] == 'failed']
+    
+    # Print out facilities that failed to geocode
+    if not bad_geo.empty:
+        print(f'Number of facilities that failed to geocode:  {bad_geo.shape[0]}')
+        print('Failed facilities:')
+        output = [print(f'    {row[0]}:  {row[1]}, {row[2]}, {row[3]}, {row[4]}') for row in bad_geo[['UniqueID', 'Facility_Name', 'Address', 'City', 'ZIP_Code']].to_numpy()]
+    else:
+        print('\n All facilities ({good_geo.shape[0]}) were successfully geocoded! \n')
+    
+    # Prompt user to continue or abort
+    resp = input("Would you like to continue?    (y/n) \n")
+    if resp.lower() == 'n':
+        sys.exit(0)
+    
+    # Append successfully geocoded facilities to LTCF_Data feature layer
+    # Get AGOL username
+    desc = arcpy.GetPortalDescription()
+    username = desc['user']['username']
+    
+    insert_fields = ['UniqueID', 'Facility_Name', 'Address',
+                    'City', 'ZIP_Code', 'Facility_Type', 'LHD',
+                    'Resolved_Y_N', 'Date_Resolved', 'Notification_Date', 'Positive_Patients',
+                    'Deceased_Patients', 'Positive_HCWs', 'CreationDate', 'Creator',
+                    'EditDate', 'Editor', 'SHAPE@XY']
+        
+    def insert_row(row):
+        xy = (row['x'], row['y'])
+        values = [row['UniqueID'],
+                  row['Facility_Name'],
+                  row['Address'],
+                  row['City'],
+                  row['ZIP_Code'],
+                  row['Facility_Type'],
+                  row['LHD'],
+                  row['Resolved_Y_N'],
+                  row['Date_Resolved'],
+                  row['Notification_Date'],
+                  row['Positive_Patients'],
+                  row['Deceased_Patients'],
+                  row['Positive_HCWs'],
+                  dt.datetime.now(),
+                  f'Python Script by {username}',
+                  dt.datetime.now(),
+                  f'Python Script by {username}',
+                  xy]
+        
+        print(f"Adding {row['UniqueID']}:  {row['Facility_Name']} ...")
+        with arcpy.da.InsertCursor(ltcf_service, insert_fields) as insert_cursor:
+            insert_cursor.insertRow(values)
+    
+    # Run insert cursor on each row of good_geo dataframe
+    good_geo.apply(insert_row, axis=1)
+
+else:
+    # Prompt user to continue to change detection
+    resp2 = input("\n    No new rows to geocode. Continue to change detection?    (y/n) \n")
+    if resp2.lower() == 'n':
+        sys.exit(0)
+
+
+# 4) Check for differences in key field and update their attributes accordingly
+# Set up a counter variable and lists for UniqueIDs that were changed
+ltcf_count = 0
+unique_updates = []
+res_updates = []
+resdate_updates = []
+pospat_updates = []
+decpat_updates = []
+poshcw_updates = []
+
+#                   0             1                2                3               4
+ltcf_fields = ['UniqueID', 'Facility_Name', 'Facility_Type', 'Resolved_Y_N', 'Date_Resolved',
+          #        5                    6                  7                     8
+          'Positive_Patients', 'Deceased_Patients', 'Positive_HCWs', 'Postive_Patients_Desc']
+cursor_time = time.time()
+with arcpy.da.UpdateCursor(ltcf_service, ltcf_fields) as ucursor:
+    print("Looping through ltcf rows to make updates ...")
+    for row in ucursor:
+        if row[0] is None:
+            print(f'Found row without UniqueID: {row[1]}, skipping...')
+            continue
+        used = False
+        # select row of updates dataframe where UniqueID == UniqueID in hosted feature layer
+        temp_df = updates.loc[updates['UniqueID'] == row[0]]
+        
+        # Check if resolved status has changed
+        if row[3] != temp_df.iloc[0]['Resolved_Y_N']:
+            print(f"    {row[0]}:    'Resolved_Y_N' field does not match    {row[3]}   {temp_df.iloc[0]['Resolved_Y_N']}")
+            row[3] = temp_df.iloc[0]['Resolved_Y_N']
+            ltcf_count += 1; used = True
+            res_updates.append(row[0])
+        
+        # Check if resolved date has changed
+        if row[4] != str(temp_df.iloc[0]['Date_Resolved']):
+            if row[4] is None and str(temp_df.iloc[0]['Date_Resolved']) == 'nan':
+                pass
+            else:
+                print(f"    {row[0]}:    'Date_Resolved' field does not match   {row[4]}   {temp_df.iloc[0]['Date_Resolved']}")
+                row[4] = temp_df.iloc[0]['Date_Resolved']
+                ltcf_count += 1; used = True
+                resdate_updates.append(row[0])
+        
+        # Check if positive patients have changed
+        if row[5] != temp_df.iloc[0]['Positive_Patients']:
+            if row[5] == 0 and temp_df.iloc[0]['Positive_Patients'] == 9999:
+                pass
+            else:
+                print(f"    {row[0]}:    'Positive_Patients' field does not match   {row[5]}   {temp_df.iloc[0]['Positive_Patients']}")
+                row[5] = temp_df.iloc[0]['Positive_Patients']
+                ltcf_count += 1; used = True
+                pospat_updates.append(row[0])
+                
+        # Check if deceased patients have changed
+        if row[6] != temp_df.iloc[0]['Deceased_Patients']:
+            if row[6] == 0 and temp_df.iloc[0]['Deceased_Patients'] == 9999:
+                pass
+            else:
+                print(f"    {row[0]}:    'Deceased_Patients' field does not match   {row[6]}   {temp_df.iloc[0]['Deceased_Patients']}")
+                row[6] = temp_df.iloc[0]['Deceased_Patients']
+                ltcf_count += 1; used = True
+                decpat_updates.append(row[0])
+        
+        # Check if positive HCWs have changed
+        if row[7] != temp_df.iloc[0]['Positive_HCWs']:
+            if row[7] == 0 and temp_df.iloc[0]['Positive_HCWs'] == 9999:
+                pass
+            else:
+                print(f"    {row[0]}:    'Positive_HCWs' field does not match   {row[7]},   {temp_df.iloc[0]['Positive_HCWs']}")
+                row[7] = temp_df.iloc[0]['Positive_HCWs']
+                ltcf_count += 1; used = True
+                poshcw_updates.append(row[0])
+        
+        # Check if positive patient description needs updated
+        if temp_df.iloc[0]['Active_Positive_Patients'] == 0 or temp_df.iloc[0]['Active_Positive_Patients'] == 9999:
+            row[8] = 'Zero cases'
+            # Catch facilities that have no active patients, but had positive patients in the past and label as 'Less than 5'
+            if temp_df.iloc[0]['Positive_Patients'] > 0 and temp_df.iloc[0]['Positive_Patients'] < 9999 and temp_df.iloc[0]['Resolved_Y_N'] == 'N':
+                row[8] = 'Less than 5'
+        elif temp_df.iloc[0]['Active_Positive_Patients'] >= 5:
+            row[8] = '5 or more'
+        elif temp_df.iloc[0]['Active_Positive_Patients'] >= 1 and temp_df.iloc[0]['Active_Positive_Patients'] < 5:
+            row[8] = 'Less than 5'
+        else:
+            print(f"    {row[0]}:    Unable to determine 'Postive_Patients_Desc', current value: {row[8]}    active positive patients: {temp_df.iloc[0]['Active_Positive_Patients']}")
+
+        ucursor.updateRow(row)
+        if used:
+            unique_updates.append(row[0])
+
+# Print out information about updates
+print("Time elapsed in update cursor: {:.2f}s".format(time.time() - cursor_time))
+print(f'Total count of LTCF Data updates is: {ltcf_count}')
+print(f'Resolved_Y_N updates: {len(res_updates)}    {res_updates}')
+print(f'Date_Resolved updates: {len(resdate_updates)}    {resdate_updates}')
+print(f'Positive_Patients updates: {len(pospat_updates)}    {pospat_updates}')
+print(f'Deceased_Patients updates: {len(decpat_updates)}    {decpat_updates}')
+print(f'Positive_HCWs updates: {len(poshcw_updates)}    {poshcw_updates}')
+
+   
+print("Script shutting down ...")
+# Stop timer and print end time in UTC
+readable_end = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
+print("The script end time is {}".format(readable_end))
+print("Time elapsed: {:.2f}s".format(time.time() - start_time))
