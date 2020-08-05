@@ -218,7 +218,7 @@ if updates_geo.shape[0] > 0:
         print('Failed facilities:')
         output = [print(f'    {row[0]}:  {row[1]}, {row[2]}, {row[3]}, {row[4]}') for row in bad_geo[['UniqueID', 'Facility_Name', 'Address', 'City', 'ZIP_Code']].to_numpy()]
     else:
-        print('\n All facilities ({good_geo.shape[0]}) were successfully geocoded! \n')
+        print(f'\n All facilities ({good_geo.shape[0]}) were successfully geocoded! \n')
     
     # Prompt user to continue or abort
     resp = input("Would you like to continue?    (y/n) \n")
@@ -317,6 +317,11 @@ with arcpy.da.UpdateCursor(ltcf_service, ltcf_fields) as ucursor:
         if row[5] != temp_df.iloc[0]['Positive_Patients']:
             if row[5] == 0 and temp_df.iloc[0]['Positive_Patients'] == 9999:
                 pass
+            elif row[5] != 0 and temp_df.iloc[0]['Positive_Patients'] == 9999:
+                print(f"    {row[0]}:    'Positive_Patients' field does not match   {row[5]}   {temp_df.iloc[0]['Positive_Patients']}   setting value to 0")
+                row[5] = 0
+                ltcf_count += 1; used = True
+                pospat_updates.append(row[0])
             else:
                 print(f"    {row[0]}:    'Positive_Patients' field does not match   {row[5]}   {temp_df.iloc[0]['Positive_Patients']}")
                 row[5] = temp_df.iloc[0]['Positive_Patients']
@@ -327,6 +332,11 @@ with arcpy.da.UpdateCursor(ltcf_service, ltcf_fields) as ucursor:
         if row[6] != temp_df.iloc[0]['Deceased_Patients']:
             if row[6] == 0 and temp_df.iloc[0]['Deceased_Patients'] == 9999:
                 pass
+            elif row[6] != 0 and temp_df.iloc[0]['Deceased_Patients'] == 9999:
+                print(f"    {row[0]}:    'Deceased_Patients' field does not match   {row[6]}   {temp_df.iloc[0]['Deceased_Patients']}   setting value to 0")
+                row[6] = 0
+                ltcf_count += 1; used = True
+                pospat_updates.append(row[0])
             else:
                 print(f"    {row[0]}:    'Deceased_Patients' field does not match   {row[6]}   {temp_df.iloc[0]['Deceased_Patients']}")
                 row[6] = temp_df.iloc[0]['Deceased_Patients']
@@ -337,6 +347,11 @@ with arcpy.da.UpdateCursor(ltcf_service, ltcf_fields) as ucursor:
         if row[7] != temp_df.iloc[0]['Positive_HCWs']:
             if row[7] == 0 and temp_df.iloc[0]['Positive_HCWs'] == 9999:
                 pass
+            elif row[7] != 0 and temp_df.iloc[0]['Positive_HCWs'] == 9999:
+                print(f"    {row[0]}:    'Positive_HCWs' field does not match   {row[7]}   {temp_df.iloc[0]['Positive_HCWs']}   setting value to 0")
+                row[7] = 0
+                ltcf_count += 1; used = True
+                pospat_updates.append(row[0])
             else:
                 print(f"    {row[0]}:    'Positive_HCWs' field does not match   {row[7]},   {temp_df.iloc[0]['Positive_HCWs']}")
                 row[7] = temp_df.iloc[0]['Positive_HCWs']
