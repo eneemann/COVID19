@@ -51,8 +51,8 @@ class Geocoder(object):
 
     def locate(self, street, zone, **kwargs):
         kwargs["apiKey"] = self._api_key
-
-        r = requests.get(self._url_template.format(street, zone), params=kwargs)
+        # r = requests.get(self._url_template.format(street, zone), params=kwargs)
+        r = requests.get(self._url_template.format(street, zone), params=kwargs, headers={'referer': 'http://ltcf-covid-updates.com'})
 
         response = r.json()
 
