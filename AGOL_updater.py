@@ -39,6 +39,10 @@ updates = pd.read_csv(os.path.join(work_dir, 'COVID_Case_Counts_latest.csv'))
 updates.sort_values('Jurisdiction', inplace=True)
 
 
+if '+AC0' in updates['Jurisdiction'].iloc[-1]:
+    updates['Jurisdiction'].iloc[-1] = updates['Jurisdiction'].iloc[-1].replace('+AC0', '')
+
+
 # TEST layer
 # counts_service = r'https://services1.arcgis.com/99lidPhWCzftIe9K/ArcGIS/rest/services/EMN_Cases_by_LHD_TEST_v3/FeatureServer/0'
 # TEST table
