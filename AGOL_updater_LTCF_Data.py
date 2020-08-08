@@ -68,7 +68,7 @@ class Geocoder(object):
 
 # Function to send fields to geocoder, get x/y values back
 def geocode(row):
-    self = 'AGRC-XXXXXXXXXX'     # insert correct API token here (home)
+    self = 'AGRC-XXXXXXXXXXXXX'     # insert correct API token here (home)
     # result = Geocoder(self).locate(row['Address'], row['ZIP_Code'],
     result = Geocoder(self).locate(row['Address'], row['City'],
                                         **{"acceptScore": 70, "spatialReference": 3857})
