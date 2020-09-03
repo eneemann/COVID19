@@ -68,7 +68,7 @@ class Geocoder(object):
 
 # Function to send fields to geocoder, get x/y values back
 def geocode(row):
-    self = 'AGRC-08077BBD392574'     # insert correct API token here (home)
+    self = 'AGRC-XXXXXXXXXXXXX'     # insert correct API token here (home)
     # result = Geocoder(self).locate(row['Address'], row['ZIP_Code'],
     result = Geocoder(self).locate(row['Address'], row['City'],
                                         **{"acceptScore": 70, "spatialReference": 3857})
@@ -95,7 +95,7 @@ def geocode(row):
 # Updated LTCF_Data is downloaded as CSV from Google Sheet 'https://docs.google.com/spreadsheets/d/1kzowz5CnFqTqzlbuZDec6JgFvLitG20q9C4iKiWpluU/edit#gid=0'
 # CSV file with updates should be named 'COVID_LTCF_Data_latest.csv'
 # Update this 'work_dir' variable with the folder you store the updated CSV in
-work_dir = r'C:\Incidents\2020\Health_and_Medical\COVID-19_Response\Tools\COVID19-master'
+work_dir = r'C:\COVID19'
 
 # TEST layer
 # ltcf_service = r'https://services1.arcgis.com/99lidPhWCzftIe9K/arcgis/rest/services/EMN_LTCF_Data_TEST/FeatureServer/0'
@@ -368,10 +368,10 @@ with arcpy.da.UpdateCursor(ltcf_service, ltcf_fields) as ucursor:
                 poshcw_updates.append(row[0])
         
         # Check if positive patient description needs updated
-        if temp_df.iloc[0]['Active_Positive_Patients'] == 0 or temp_df.iloc[0]['Active_Positive_Patients'] == 9999:
+        if (temp_df.iloc[0]['Active_Positive_Patients'] == 0 or temp_df.iloc[0]['Active_Positive_Patients'] == 9999) and temp_df.iloc[0]['Facility_Type'] not in ('COVID-unit', 'COVID-only'):
             row[8] = 'Zero cases'
             # Catch facilities that have no active patients, but had positive patients in the past and label as 'Less than 5'
-            if temp_df.iloc[0]['Positive_Patients'] > 0 and temp_df.iloc[0]['Positive_Patients'] < 9999 and temp_df.iloc[0]['Resolved_Y_N'] == 'N' and temp_df.iloc[0]['Facility_Type'] not in ('COVID-unit', 'COVID-only'):
+            if temp_df.iloc[0]['Positive_Patients'] > 0 and temp_df.iloc[0]['Positive_Patients'] < 9999 and temp_df.iloc[0]['Resolved_Y_N'] == 'N':
                 row[8] = 'Less than 5'
         elif temp_df.iloc[0]['Facility_Type'] == 'COVID-unit':
             row[8] = 'COVID-unit'
