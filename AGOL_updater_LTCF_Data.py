@@ -68,7 +68,7 @@ class Geocoder(object):
 
 # Function to send fields to geocoder, get x/y values back
 def geocode(row):
-    self = 'AGRC-XXXXXXXXXXXXX'     # insert correct API token here (home)
+    self = 'AGRC-08077BBD392574'     # insert correct API token here (home)
     # result = Geocoder(self).locate(row['Address'], row['ZIP_Code'],
     result = Geocoder(self).locate(row['Address'], row['City'],
                                         **{"acceptScore": 70, "spatialReference": 3857})
@@ -95,7 +95,7 @@ def geocode(row):
 # Updated LTCF_Data is downloaded as CSV from Google Sheet 'https://docs.google.com/spreadsheets/d/1kzowz5CnFqTqzlbuZDec6JgFvLitG20q9C4iKiWpluU/edit#gid=0'
 # CSV file with updates should be named 'COVID_LTCF_Data_latest.csv'
 # Update this 'work_dir' variable with the folder you store the updated CSV in
-work_dir = r'C:\COVID19'
+work_dir = r'C:\Incidents\2020\Health_and_Medical\COVID-19_Response\Tools\COVID19-master'
 
 # TEST layer
 # ltcf_service = r'https://services1.arcgis.com/99lidPhWCzftIe9K/arcgis/rest/services/EMN_LTCF_Data_TEST/FeatureServer/0'
@@ -112,13 +112,14 @@ updates.sort_values('ID', inplace=True)
 
 # Drop updates columns that aren't needed
 # Facility_Type will be dropped, then recreated from 'Dashboard Facility Type')
-updates.drop(columns=['Facility_Type', 'Unnamed: 16', 'Notes'],  inplace=True)
+# Renamed 'Unnamed: 16' to 'COVID_Unit_Positive_Patients_Onsite'
+updates.drop(columns=['Facility_Type', 'Notes'],  inplace=True)
 
 # Reaname updates columns to match service
 col_renames = {'ID': 'OID',
                'Dashboard Facility Type': 'Facility_Type',
                'Positive Patients': 'Positive_Patients',
-               'Active Positive Patients': 'Active_Positive_Patients', # not in ltcf data
+               'Active Positive Patients': 'Active_Positive_Patients', # not in ltcf data originally, but currently part of the AGOL schema
                'Deceased Patients': 'Deceased_Patients',
                'Positive HCWs': 'Positive_HCWs',
                'Positive Patient Description': 'Positive_Patients_Desc'}
@@ -139,6 +140,7 @@ dt_fields = ['Notification_Date']
 # Intermediate step: convert NaNs to 9999 for integers, to 'N' for Resolved_Y_N
 updates[int_fields] = updates[int_fields].fillna(9999)
 updates['Resolved_Y_N'] = updates['Resolved_Y_N'].fillna('N')
+updates['COVID_Unit_Positive_Patients_Onsite'] = updates['COVID_Unit_Positive_Patients_Onsite'].fillna('N')
 
 # updates[int_fields] = updates[int_fields].astype(int)
 updates[int_fields] = updates[int_fields].astype(int)
@@ -152,7 +154,7 @@ keep_fields = ['OID', 'UniqueID', 'Facility_Name', 'Address',
                 'City', 'ZIP_Code', 'Facility_Type', 'LHD',
                 'Resolved_Y_N', 'Date_Resolved', 'Longitude',
                 'Latitude', 'Notification_Date', 'Positive_Patients',
-                'Deceased_Patients', 'Positive_HCWs', 'Positive_Patients_Desc']
+                'Deceased_Patients', 'Positive_HCWs', 'Positive_Patients_Desc', 'COVID_Unit_Positive_Patients_Onsite']
 
 # Reoder columns to updates to match ltcf data
 cols_reorder = keep_fields.copy()
@@ -234,7 +236,7 @@ if updates_geo.shape[0] > 0:
                     'City', 'ZIP_Code', 'Facility_Type', 'LHD',
                     'Resolved_Y_N', 'Date_Resolved', 'Notification_Date', 'Positive_Patients',
                     'Deceased_Patients', 'Positive_HCWs', 'CreationDate', 'Creator',
-                    'EditDate', 'Editor', 'SHAPE@XY']
+                    'EditDate', 'Editor', 'SHAPE@XY', 'Active_Positive_Patients', 'COVID_Unit_Positive_Patients_Onsite']
         
     def insert_row(row):
         xy = (row['x'], row['y'])
@@ -255,7 +257,9 @@ if updates_geo.shape[0] > 0:
                   f'Python Script by {username}',
                   dt.datetime.now(),
                   f'Python Script by {username}',
-                  xy]
+                  xy,
+                  row['Active_Positive_Patients'],
+                  row['COVID_Unit_Positive_Patients_Onsite']]
         
         print(f"Adding {row['UniqueID']}:  {row['Facility_Name']} ...")
         with arcpy.da.InsertCursor(ltcf_service, insert_fields) as insert_cursor:
@@ -280,11 +284,16 @@ resdate_updates = []
 pospat_updates = []
 decpat_updates = []
 poshcw_updates = []
+actpospat_updates = []
+patonsitestatus_updates = []
+covidunitpatonsite_updates = []
 
 #                   0             1                2                3               4
 ltcf_fields = ['UniqueID', 'Facility_Name', 'Facility_Type', 'Resolved_Y_N', 'Date_Resolved',
           #        5                    6                  7                     8
-          'Positive_Patients', 'Deceased_Patients', 'Positive_HCWs', 'Postive_Patients_Desc']
+          'Positive_Patients', 'Deceased_Patients', 'Positive_HCWs', 'Postive_Patients_Desc', 
+          #         9                           10                              11                              12
+          'Active_Positive_Patients', 'Patient_Onsite_Status', 'COVID_Unit_Positive_Patients_Onsite', 'Dashboard_Display']
 cursor_time = time.time()
 with arcpy.da.UpdateCursor(ltcf_service, ltcf_fields) as ucursor:
     print("Looping through ltcf rows to make updates ...")
@@ -362,14 +371,69 @@ with arcpy.da.UpdateCursor(ltcf_service, ltcf_fields) as ucursor:
         if temp_df.iloc[0]['Active_Positive_Patients'] == 0 or temp_df.iloc[0]['Active_Positive_Patients'] == 9999:
             row[8] = 'Zero cases'
             # Catch facilities that have no active patients, but had positive patients in the past and label as 'Less than 5'
-            if temp_df.iloc[0]['Positive_Patients'] > 0 and temp_df.iloc[0]['Positive_Patients'] < 9999 and temp_df.iloc[0]['Resolved_Y_N'] == 'N':
+            if temp_df.iloc[0]['Positive_Patients'] > 0 and temp_df.iloc[0]['Positive_Patients'] < 9999 and temp_df.iloc[0]['Resolved_Y_N'] == 'N' and temp_df.iloc[0]['Facility_Type'] not in ('COVID-unit', 'COVID-only'):
                 row[8] = 'Less than 5'
+        elif temp_df.iloc[0]['Facility_Type'] == 'COVID-unit':
+            row[8] = 'COVID-unit'
+        elif temp_df.iloc[0]['Facility_Type'] == 'COVID-only':
+            row[8] = 'COVID-only'
         elif temp_df.iloc[0]['Active_Positive_Patients'] >= 5:
             row[8] = '5 or more'
         elif temp_df.iloc[0]['Active_Positive_Patients'] >= 1 and temp_df.iloc[0]['Active_Positive_Patients'] < 5:
             row[8] = 'Less than 5'
         else:
             print(f"    {row[0]}:    Unable to determine 'Postive_Patients_Desc', current value: {row[8]}    active positive patients: {temp_df.iloc[0]['Active_Positive_Patients']}")
+        
+        # Check if active positive patients have changed
+        if row[9] != temp_df.iloc[0]['Active_Positive_Patients']:
+            if row[9] == 0 and temp_df.iloc[0]['Active_Positive_Patients'] == 9999:
+                pass
+            elif row[9] != 0 and temp_df.iloc[0]['Active_Positive_Patients'] == 9999:
+                print(f"    {row[0]}:    'Active_Positive_Patients' field does not match   {row[9]}   {temp_df.iloc[0]['Active_Positive_Patients']}   setting value to 0")
+                row[9] = 0
+                ltcf_count += 1; used = True
+                actpospat_updates.append(row[0])
+            else:
+                print(f"    {row[0]}:    'Active_Positive_Patients' field does not match   {row[9]},   {temp_df.iloc[0]['Active_Positive_Patients']}")
+                row[9] = temp_df.iloc[0]['Active_Positive_Patients']
+                ltcf_count += 1; used = True
+                actpospat_updates.append(row[0])
+
+        # Check if patient onsite status needs to be updated
+        # Facilities with active positive patients onsite
+        if (temp_df.iloc[0]['Active_Positive_Patients'] > 0 and temp_df.iloc[0]['Active_Positive_Patients'] < 9999) or temp_df.iloc[0]['COVID_Unit_Positive_Patients_Onsite'] == 'Y':
+            row[10] = 'Onsite'
+        # Facilities with positive patients who have been moved offsite
+        elif temp_df.iloc[0]['Active_Positive_Patients'] in (0, 9999) and temp_df.iloc[0]['Positive_Patients'] not in (0, 9999):
+            print(f"    {row[0]}:    'Patient_Onsite_Status' set to:  Offsite  ")
+            row[10] = 'Offsite'
+        # Facilities with no positive residents
+        elif temp_df.iloc[0]['Positive_Patients'] in (0, 9999) and temp_df.iloc[0]['Active_Positive_Patients'] in (0, 9999):
+            row[10] = 'Not Applicable'
+        else:
+            # If unable to determine, default to onsite
+            row[10] = 'Onsite'
+            print(f"    {row[0]}:    Unable to determine 'Patient_Onsite_Status', current value: {row[10]}    active positive patients: {temp_df.iloc[0]['Active_Positive_Patients']}")
+
+        # Check if COVID-only or COVID-unit facilities have patients onsite
+        if row[11] != temp_df.iloc[0]['COVID_Unit_Positive_Patients_Onsite']:
+            print(f"    {row[0]}:    'COVID_Unit_Positive_Patients_Onsite' field does not match    {row[11]}   {temp_df.iloc[0]['COVID_Unit_Positive_Patients_Onsite']}")
+            row[11] = temp_df.iloc[0]['COVID_Unit_Positive_Patients_Onsite']
+            ltcf_count += 1; used = True
+            covidunitpatonsite_updates.append(row[0])
+
+        # Check if the facility needs to be displayed on the dashboard
+        if temp_df.iloc[0]['Facility_Type'] in ('Assisted Living', 'Nursing Home', 'Intermed Care/Intel Disabled', 'COVID-unit', 'COVID-only'):
+            if temp_df.iloc[0]['Positive_Patients'] > 0 and temp_df.iloc[0]['Positive_Patients'] < 9999 and temp_df.iloc[0]['Resolved_Y_N'] == 'N':
+                row[12] = 'Y'
+                print(f"    {row[0]}: has positive patients, adding to dashboard display")
+            elif temp_df.iloc[0]['COVID_Unit_Positive_Patients_Onsite'] == 'Y':
+                row[12] = 'Y'
+                print(f"    {row[0]}: has positive patients in COVID-unit, adding to dashboard display")
+            else:
+                row[12] = 'N'
+        else:
+            row[12] = 'N'
 
         ucursor.updateRow(row)
         if used:
@@ -383,6 +447,8 @@ print(f'Date_Resolved updates: {len(resdate_updates)}    {resdate_updates}')
 print(f'Positive_Patients updates: {len(pospat_updates)}    {pospat_updates}')
 print(f'Deceased_Patients updates: {len(decpat_updates)}    {decpat_updates}')
 print(f'Positive_HCWs updates: {len(poshcw_updates)}    {poshcw_updates}')
+print(f'Active_Positive_Patients updates: {len(actpospat_updates)}    {actpospat_updates}')
+print(f'COVID_Unit_Positive_Patients_Onsite updates: {len(covidunitpatonsite_updates)}        {covidunitpatonsite_updates}')
 
    
 print("Script shutting down ...")
