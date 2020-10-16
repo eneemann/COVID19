@@ -125,8 +125,11 @@ col_renames = {'ID': 'OID',
                'Positive Patient Description': 'Positive_Patients_Desc'}
 
 updates.rename(col_renames, axis='columns', inplace=True)
+
 # Strip whitespace from string fields
-updates = updates.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
+# updates = updates.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
+updates = updates.applymap(lambda x: x.strip() if type(x) == str else x)
+
 # Convert empty spaces to NaNs
 updates = updates.applymap(lambda x: np.nan if isinstance(x, str) and not x else x)
 
@@ -137,12 +140,13 @@ int_fields = ['OID', 'UniqueID', 'Positive_Patients', 'Deceased_Patients',
 str_fields = ['Positive_Patients_Desc']
 dt_fields = ['Notification_Date']
 
+
 # Intermediate step: convert NaNs to 9999 for integers, to 'N' for Resolved_Y_N
 updates[int_fields] = updates[int_fields].fillna(9999)
 updates['Resolved_Y_N'] = updates['Resolved_Y_N'].fillna('N')
 updates['COVID_Unit_Positive_Patients_Onsite'] = updates['COVID_Unit_Positive_Patients_Onsite'].fillna('N')
 
-# updates[int_fields] = updates[int_fields].astype(int)
+# Cast columns as proper data types
 updates[int_fields] = updates[int_fields].astype(int)
 updates[str_fields] = updates[str_fields].astype(str)
 updates[dt_fields] = updates[dt_fields].astype('datetime64[ns]')
@@ -191,7 +195,8 @@ ltcf_arr = arcpy.da.TableToNumPyArray('in_memory\\temp_table', keep_fields)
 ltcf_df = pd.DataFrame(data=ltcf_arr)
 
 # Strip whitespace from string fields
-ltcf_df = ltcf_df.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
+# ltcf_df = ltcf_df.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
+ltcf_df = ltcf_df.applymap(lambda x: x.strip() if type(x) == str else x)
 
 
 
