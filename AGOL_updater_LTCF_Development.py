@@ -469,7 +469,53 @@ print(f'Positive_HCWs updates: {len(poshcw_updates)}    {poshcw_updates}')
 print(f'Active_Positive_Patients updates: {len(actpospat_updates)}    {actpospat_updates}')
 print(f'COVID_Unit_Positive_Patients_Onsite updates: {len(covidunitpatonsite_updates)}        {covidunitpatonsite_updates}')
 
-   
+ # Print out dashboard totals based on this update
+fields = ['Facility_Type', 'Resolved_Y_N', 'Positive_Patients', 'Deceased_Patients', 'Positive_HCWs', 'Postive_Patients_Desc']
+query = '"Facility_Type" IN (\'Nursing Home\', \'Assisted Living\', \'Intermed Care/Intel Disabled\') AND "Dashboard_Display_Cat" <> 9999'
+def find_daily_values(ltcf_fc):
+    with arcpy.da.SearchCursor(ltcf_fc, fields, query) as cursor:
+        arcpy.management.SelectLayerByAttribute(ltcf_fc, "NEW_SELECTION", query)
+        facilities_impacted = arcpy.management.GetCount(ltcf_fc)[0]
+        print("Total Outbreaks:     " + str(facilities_impacted))
+        positive_patients = 0
+        deceased_patients = 0
+        positive_hcws = 0
+        more_than_20 = 0
+        eleven_to_20 = 0
+        five_to_ten = 0
+        one_to_four = 0
+        no_resident_cases = 0
+        resolved = 0
+        for row in cursor:
+            if row[1] == 'Y':
+                resolved += 1
+            positive_patients += row[2]
+            deceased_patients += row[3]
+            positive_hcws += row[4]
+            if row[1] == 'N' and row[5] == 'More than 20':
+                more_than_20 += 1
+            elif row[1] == 'N' and row[5] == '11 to 20':
+                eleven_to_20 += 1
+            elif row[1] == 'N' and row[5] == '5 to 10':
+                five_to_ten += 1
+            elif row[1] == 'N' and row[5] == '1 to 4':
+                one_to_four += 1
+            elif row[1] == 'N' and row[5] == 'No Resident Cases':
+                no_resident_cases += 1
+        print('Total resolved:        ' + str(resolved))
+        print('Total positive patients:      ' + str(positive_patients))
+        print('Total deceased patients:      ' + str(deceased_patients))
+        print('Total positive HCWs:    ' + str(positive_hcws))
+        print('Total facilities with active cases:     ' + str(more_than_20 + eleven_to_20 + five_to_ten + one_to_four + no_resident_cases))
+        print('Total more than 20:    ' + str(more_than_20))
+        print('Total 11 to 20:     ' + str(eleven_to_20))
+        print('Total 5 to 10:    ' + str(five_to_ten))
+        print('Total 1 to 4:    ' + str(one_to_four))
+        print('Total No Resident Cases:     ' + str(no_resident_cases) + '\n')
+        arcpy.management.SelectLayerByAttribute(ltcf_fc, 'CLEAR_SELECTION')
+
+find_daily_values(ltcf_service)
+  
 print("Script shutting down ...")
 # Stop timer and print end time in UTC
 readable_end = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
