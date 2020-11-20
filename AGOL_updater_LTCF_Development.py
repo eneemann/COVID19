@@ -469,14 +469,15 @@ print(f'Positive_HCWs updates: {len(poshcw_updates)}    {poshcw_updates}')
 print(f'Active_Positive_Patients updates: {len(actpospat_updates)}    {actpospat_updates}')
 print(f'COVID_Unit_Positive_Patients_Onsite updates: {len(covidunitpatonsite_updates)}        {covidunitpatonsite_updates}')
 
- # Print out dashboard totals based on this update
-fields = ['Facility_Type', 'Resolved_Y_N', 'Positive_Patients', 'Deceased_Patients', 'Positive_HCWs', 'Postive_Patients_Desc']
-query = '"Facility_Type" IN (\'Nursing Home\', \'Assisted Living\', \'Intermed Care/Intel Disabled\') AND "Dashboard_Display_Cat" <> 9999'
+# Print out dashboard totals based on this update
+#               0               1                   2                   3                   4                   5                           6
+fields = ['Facility_Type', 'Resolved_Y_N', 'Positive_Patients', 'Deceased_Patients', 'Positive_HCWs', 'Postive_Patients_Desc', 'Dashboard_Display_Cat']
+query = '"Facility_Type" IN (\'Nursing Home\', \'Assisted Living\', \'Intermed Care/Intel Disabled\')'
 def find_daily_values(ltcf_fc):
     with arcpy.da.SearchCursor(ltcf_fc, fields, query) as cursor:
-        arcpy.management.SelectLayerByAttribute(ltcf_fc, "NEW_SELECTION", query)
-        facilities_impacted = arcpy.management.GetCount(ltcf_fc)[0]
-        print("Total Outbreaks:     " + str(facilities_impacted))
+        facility_types = ['Nursing Home', 'Assisted Living', 'Intermed Care/Intel Disabled']
+        investigations = 0
+        outbreaks = 0
         positive_patients = 0
         deceased_patients = 0
         positive_hcws = 0
@@ -487,7 +488,11 @@ def find_daily_values(ltcf_fc):
         no_resident_cases = 0
         resolved = 0
         for row in cursor:
-            if row[1] == 'Y':
+            if row[0] in facility_types:
+                investigations += 1
+            if row[6] != 9999:
+                outbreaks += 1
+            if row[1] == 'Y' and row[6] != 9999:
                 resolved += 1
             positive_patients += row[2]
             deceased_patients += row[3]
@@ -502,6 +507,8 @@ def find_daily_values(ltcf_fc):
                 one_to_four += 1
             elif row[1] == 'N' and row[5] == 'No Resident Cases':
                 no_resident_cases += 1
+        print('Total investigations:      ' + str(investigations))
+        print('Total outbreaks:        ' + str(outbreaks))
         print('Total resolved:        ' + str(resolved))
         print('Total positive patients:      ' + str(positive_patients))
         print('Total deceased patients:      ' + str(deceased_patients))
