@@ -102,8 +102,8 @@ work_dir = r'C:\COVID19'
 
 # LTCF Development layer (version 2)
 ltcf_service = r'https://services6.arcgis.com/KaHXE9OkiB9e63uE/arcgis/rest/services/LTCF_Data_Development_V2/FeatureServer/0'
-
-
+# LTCF Events by Day Development
+ltcf_events_by_day = r'path/to/hosted/table'
 
 # 1) Load CSV data with updates, prep, and clean up the data
 # Read in updates from CSV that was exported from Google Sheet (LTCF_Data)
@@ -311,9 +311,11 @@ with arcpy.da.UpdateCursor(ltcf_service, ltcf_fields) as ucursor:
         temp_df = updates.loc[updates['UniqueID'] == row[0]]
         
         # Check if resolved status has changed
-        if row[3] != temp_df.iloc[0]['Resolved_Y_N']:
+        resolved_status = temp_df.iloc[0]['Resolved_Y_N']
+        status_check = resolved_status.upper()
+        if row[3] != status_check:
             print(f"    {row[0]}:    'Resolved_Y_N' field does not match    {row[3]}   {temp_df.iloc[0]['Resolved_Y_N']}")
-            row[3] = temp_df.iloc[0]['Resolved_Y_N']
+            row[3] = status_check
             ltcf_count += 1; used = True
             res_updates.append(row[0])
         
@@ -513,16 +515,101 @@ def find_daily_values(ltcf_fc):
         print('Total positive patients:      ' + str(positive_patients))
         print('Total deceased patients:      ' + str(deceased_patients))
         print('Total positive HCWs:    ' + str(positive_hcws))
-        print('Total facilities with active cases:     ' + str(more_than_20 + eleven_to_20 + five_to_ten + one_to_four + no_resident_cases))
+        facilities_with_active_cases = more_than_20 + eleven_to_20 + five_to_ten + one_to_four + no_resident_cases
+        print('Total facilities with active cases:     ' + str(facilities_with_active_cases))
         print('Total more than 20:    ' + str(more_than_20))
         print('Total 11 to 20:     ' + str(eleven_to_20))
         print('Total 5 to 10:    ' + str(five_to_ten))
         print('Total 1 to 4:    ' + str(one_to_four))
         print('Total No Resident Cases:     ' + str(no_resident_cases) + '\n')
         arcpy.management.SelectLayerByAttribute(ltcf_fc, 'CLEAR_SELECTION')
+        return investigations, outbreaks, resolved, positive_patients, deceased_patients, positive_hcws, facilities_with_active_cases, more_than_20, eleven_to_20, five_to_ten, one_to_four, no_resident_cases
 
-find_daily_values(ltcf_service)
-  
+total_investigations, total_outbreaks, total_outbreaks_resolved, total_positive_residents, total_deceased_residents, total_positive_HCWs, total_facilities_with_active_cases, count_more_than_20, count_11_to_20, count_5_to_10, count_1_to_4, count_no_resident_cases = find_daily_values(ltcf_service)
+
+# 5) APPEND MOST RECENT VALUES TO THE LTCF EVENTS BY DAY TABLE
+insert_fields = ['Date', 'Total_Investigations', 'Total_Outbreaks', 'Total_Outbreaks_Resolved',
+                'Total_Positive_Residents', 'Total_Deceased_Residents', 'Total_Positive_HCWs',
+                'Today_Facilities_Active_Cases', 'Today_Count_More_than_20', 'Today_Count_11_to_20',
+                'Today_Count_5_to_10', 'Today_Count_1_to_4', 'Today_Count_No_Res_Cases']
+insert_values = [(dt.date.today(), total_investigations, total_outbreaks, total_outbreaks_resolved,
+                total_positive_residents, total_deceased_residents, total_positive_HCWs,
+                total_facilities_with_active_cases, count_more_than_20, count_11_to_20,
+                count_5_to_10, count_1_to_4, count_no_resident_cases)]
+with arcpy.da.InsertCursor(ltcf_events_by_day, insert_fields) as cursor:
+  for row in insert_values:
+      cursor.insertRow(row)
+print('Inserted values into LTCF events by day table...')
+
+
+# 6) CALCULATE DAILY AND CUMULATIVE NUBMERS IN PANDAS DATAFRAME
+ltcf_events_by_day_keep_fields = ['Date', 'Total_Investigations', 
+                    'Total_Positive_Residents', 'Total_Deceased_Residents', 'Total_Positive_HCWs',
+                    ]
+                    #'Total_Outbreaks', 'Total_Outbreaks_Resolved',
+                    # 'Today_Facilities_Active_Cases', 'Today_Count_More_than_20', 'Today_Count_11_to_20',
+                    # 'Today_Count_5_to_10', 'Today_Count_1_to_4', 'Today_Count_No_Res_Cases'
+                    # 'Today_Positive_Residents', 'Today_Deceased_Residents', 'Today_Positive_HCWs', 'Today_Outbreaks',
+                    # 'Today_Outbreaks_Resolved', 'Today_Fac_Active_Cases_7_Day_Avg', 'Today_Outbreaks_7_Day_Avg',
+                    # 'Today_Outbreaks_Res_7_Day_Avg', 'Total_Positive_Res_7_Day_Avg', 'Total_Deceased_Res_7_Day_Avg',
+                    # 'Total_Positive_HCWs_7_Day_Avg', 'Today_Positive_Res_7_Day_Avg', 'Today_Deceased_Res_7_Day_Avg',
+                    # 'Today_Positive_HCWs_7_Day_Avg']
+
+# Delete in-memory table that will be used (if it already exists)
+if arcpy.Exists('in_memory\\temp_table'):
+    print("Deleting 'in_memory\\temp_table' ...")
+    arcpy.Delete_management('in_memory\\temp_table')
+    time.sleep(3)
+
+# Convert counts_by_day into pandas dataframe (table --> numpy array --> dataframe)
+arcpy.conversion.TableToTable(ltcf_events_by_day, 'in_memory', 'temp_table')
+day_arr = arcpy.da.TableToNumPyArray('in_memory\\temp_table', ltcf_events_by_day_keep_fields)
+day_df = pd.DataFrame(data=day_arr)
+
+# Convert string entries of 'None' to zeros ('0')
+mask = day_df.applymap(lambda x: x == 'None')
+cols = day_df.columns[(mask).any()]
+for col in day_df[cols]:
+    day_df.loc[mask[col], col] = '0'
+
+# Sort data ascending so most recent dates are at the bottom (highest index)
+day_df.head()
+day_df.sort_values('Date', inplace=True, ascending=True)
+day_df.head().to_string()
+day_df['Date'] = pd.to_datetime(day_df['Date']).dt.normalize()
+
+# Load test data during the test process
+# Rename variables below back to day_df after done testing
+# test_df = pd.read_csv(os.path.join(work_dir, 'by_day_testing.csv'))
+
+# Calculate daily increases using the pandas diff function
+day_df['Today_Positive_Residents'] = day_df['Total_Positive_Residents'].diff()
+day_df['Today_Deceased_Residents'] = day_df['Total_Deceased_Residents'].diff()
+day_df['Today_Positive_HCWs'] = day_df['Total_Positive_HCWs'].diff()
+print(day_df)
+
+
+# 7a) UPDATE ***ONLY TODAY'S ROW*** IN COUNTS BY DAY TABLE WITH NEW NUMBERS
+# start_time = time.time()
+table_count = 0
+#                   0           1                           2
+table_fields = ['Date', 'Today_Positive_Residents', 'Today_Deceased_Residents', 
+                #       3
+                'Today_Positive_HCWs']
+with arcpy.da.UpdateCursor(ltcf_events_by_day, table_fields) as ucursor:
+    print("Looping through rows to make updates ...")
+    for row in ucursor:
+        if dt.datetime.now().date() == row[0].date():
+            print(row[0])
+            # select row of dataframe where date == date in hosted 'ltcf events by day' table
+            temp_df = day_df.loc[day_df['Date'] == row[0].date()].reset_index()
+            row[1] = temp_df.iloc[0]['Today_Positive_Residents']
+            row[2] = temp_df.iloc[0]['Today_Deceased_Residents']
+            row[3] = temp_df.iloc[0]['Today_Positive_HCWs']
+            table_count += 1
+            ucursor.updateRow(row)
+print(f'Total count of LTCF Events By Day Table updates is: {table_count}')
+
 print("Script shutting down ...")
 # Stop timer and print end time in UTC
 readable_end = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
