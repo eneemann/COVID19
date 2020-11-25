@@ -602,13 +602,38 @@ with arcpy.da.UpdateCursor(ltcf_events_by_day, table_fields) as ucursor:
         if dt.datetime.now().date() == row[0].date():
             print(row[0])
             # select row of dataframe where date == date in hosted 'ltcf events by day' table
-            temp_df = day_df.loc[day_df['Date'] == row[0].date()].reset_index()
+            d = row[0].strftime('%Y-%m-%d')
+            temp_df = day_df.loc[day_df['Date'] == d].reset_index()
             row[1] = temp_df.iloc[0]['Today_Positive_Residents']
             row[2] = temp_df.iloc[0]['Today_Deceased_Residents']
             row[3] = temp_df.iloc[0]['Today_Positive_HCWs']
             table_count += 1
             ucursor.updateRow(row)
 print(f'Total count of LTCF Events By Day Table updates is: {table_count}')
+
+
+
+# # 7b) UPDATE ***ALL ROWS*** IN COUNTS BY DAY TABLE WITH NEW NUMBERS
+# # Should only need to run this once to make the calculations for all previous rows
+# # start_time = time.time()
+# table_count = 0
+# #                   0           1                           2
+# table_fields = ['Date', 'Today_Positive_Residents', 'Today_Deceased_Residents', 
+#                 #       3
+#                 'Today_Positive_HCWs']
+# with arcpy.da.UpdateCursor(ltcf_events_by_day, table_fields) as ucursor:
+#     print("Looping through rows to make updates ...")
+#     for row in ucursor:
+#         print(row[0])
+#         # select row of dataframe where date == date in hosted 'ltcf events by day' table
+#         d = row[0].strftime('%Y-%m-%d')
+#         temp_df = day_df.loc[day_df['Date'] == d].reset_index()
+#         row[1] = temp_df.iloc[0]['Today_Positive_Residents']
+#         row[2] = temp_df.iloc[0]['Today_Deceased_Residents']
+#         row[3] = temp_df.iloc[0]['Today_Positive_HCWs']
+#         table_count += 1
+#         ucursor.updateRow(row)
+# print(f'Total count of LTCF Events By Day Table updates is: {table_count}')
 
 print("Script shutting down ...")
 # Stop timer and print end time in UTC
