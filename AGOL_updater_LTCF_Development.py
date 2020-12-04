@@ -103,7 +103,7 @@ work_dir = r'C:\COVID19'
 # LTCF Development layer (version 2)
 ltcf_service = r'https://services6.arcgis.com/KaHXE9OkiB9e63uE/arcgis/rest/services/LTCF_Data_Development_V2/FeatureServer/0'
 # LTCF Events by Day Development
-ltcf_events_by_day = r'path/to/hosted/table'
+ltcf_events_by_day = r'https://services6.arcgis.com/KaHXE9OkiB9e63uE/arcgis/rest/services/LTCF_Events_by_Day_Development_XY/FeatureServer/0'
 
 # 1) Load CSV data with updates, prep, and clean up the data
 # Read in updates from CSV that was exported from Google Sheet (LTCF_Data)
@@ -531,11 +531,12 @@ total_investigations, total_outbreaks, total_outbreaks_resolved, total_positive_
 insert_fields = ['Date', 'Total_Investigations', 'Total_Outbreaks', 'Total_Outbreaks_Resolved',
                 'Total_Positive_Residents', 'Total_Deceased_Residents', 'Total_Positive_HCWs',
                 'Today_Facilities_Active_Cases', 'Today_Count_More_than_20', 'Today_Count_11_to_20',
-                'Today_Count_5_to_10', 'Today_Count_1_to_4', 'Today_Count_No_Res_Cases']
+                'Today_Count_5_to_10', 'Today_Count_1_to_4', 'Today_Count_No_Res_Cases', 'SHAPE@XY']
+events_by_day_xy = (40, -111)
 insert_values = [(dt.date.today(), total_investigations, total_outbreaks, total_outbreaks_resolved,
                 total_positive_residents, total_deceased_residents, total_positive_HCWs,
                 total_facilities_with_active_cases, count_more_than_20, count_11_to_20,
-                count_5_to_10, count_1_to_4, count_no_resident_cases)]
+                count_5_to_10, count_1_to_4, count_no_resident_cases, events_by_day_xy)]
 with arcpy.da.InsertCursor(ltcf_events_by_day, insert_fields) as cursor:
   for row in insert_values:
       cursor.insertRow(row)
@@ -545,8 +546,7 @@ print('Inserted values into LTCF events by day table...')
 # 6) CALCULATE DAILY AND CUMULATIVE NUBMERS IN PANDAS DATAFRAME
 ltcf_events_by_day_keep_fields = ['Date', 'Total_Investigations', 
                     'Total_Positive_Residents', 'Total_Deceased_Residents', 'Total_Positive_HCWs',
-                    ]
-                    #'Total_Outbreaks', 'Total_Outbreaks_Resolved',
+                    'Total_Outbreaks', 'Total_Outbreaks_Resolved']
                     # 'Today_Facilities_Active_Cases', 'Today_Count_More_than_20', 'Today_Count_11_to_20',
                     # 'Today_Count_5_to_10', 'Today_Count_1_to_4', 'Today_Count_No_Res_Cases'
                     # 'Today_Positive_Residents', 'Today_Deceased_Residents', 'Today_Positive_HCWs', 'Today_Outbreaks',
@@ -563,7 +563,7 @@ if arcpy.Exists('in_memory\\temp_table'):
 
 # Convert counts_by_day into pandas dataframe (table --> numpy array --> dataframe)
 arcpy.conversion.TableToTable(ltcf_events_by_day, 'in_memory', 'temp_table')
-day_arr = arcpy.da.TableToNumPyArray('in_memory\\temp_table', ltcf_events_by_day_keep_fields)
+day_arr = arcpy.da.TableToNumPyArray('in_memory\\temp_table', ltcf_events_by_day_keep_fields, null_value=0)
 day_df = pd.DataFrame(data=day_arr)
 
 # Convert string entries of 'None' to zeros ('0')
@@ -583,9 +583,15 @@ day_df['Date'] = pd.to_datetime(day_df['Date']).dt.normalize()
 # test_df = pd.read_csv(os.path.join(work_dir, 'by_day_testing.csv'))
 
 # Calculate daily increases using the pandas diff function
-day_df['Today_Positive_Residents'] = day_df['Total_Positive_Residents'].diff()
-day_df['Today_Deceased_Residents'] = day_df['Total_Deceased_Residents'].diff()
-day_df['Today_Positive_HCWs'] = day_df['Total_Positive_HCWs'].diff()
+# If any daily increases are negative (due to false positives or double-counting),
+# set increase to 0
+day_df['Today_Positive_Residents'] = day_df['Total_Positive_Residents'].diff().apply(lambda x: 0 if x < 0 else x)
+day_df['Today_Deceased_Residents'] = day_df['Total_Deceased_Residents'].diff().apply(lambda x: 0 if x < 0 else x)
+day_df['Today_Positive_HCWs'] = day_df['Total_Positive_HCWs'].diff().apply(lambda x: 0 if x < 0 else x)
+day_df['Today_Outbreaks'] = day_df['Total_Outbreaks'].diff().apply(lambda x: 0 if x < 0 else x)
+day_df['Today_Outbreaks_Resolved'] = day_df['Total_Outbreaks_Resolved'].diff().apply(lambda x: 0 if x < 0 else x)
+day_df['Today_Investigations'] = day_df['Total_Investigations'].diff().apply(lambda x: 0 if x < 0 else x)
+
 print(day_df)
 
 
@@ -594,8 +600,8 @@ print(day_df)
 table_count = 0
 #                   0           1                           2
 table_fields = ['Date', 'Today_Positive_Residents', 'Today_Deceased_Residents', 
-                #       3
-                'Today_Positive_HCWs']
+                #       3                   4                   5                               6
+                'Today_Positive_HCWs', 'Today_Outbreaks', 'Today_Outbreaks_Resolved', 'Today_Investigations']
 with arcpy.da.UpdateCursor(ltcf_events_by_day, table_fields) as ucursor:
     print("Looping through rows to make updates ...")
     for row in ucursor:
@@ -607,6 +613,9 @@ with arcpy.da.UpdateCursor(ltcf_events_by_day, table_fields) as ucursor:
             row[1] = temp_df.iloc[0]['Today_Positive_Residents']
             row[2] = temp_df.iloc[0]['Today_Deceased_Residents']
             row[3] = temp_df.iloc[0]['Today_Positive_HCWs']
+            row[4] = temp_df.iloc[0]['Today_Outbreaks']
+            row[5] = temp_df.iloc[0]['Today_Outbreaks_Resolved']
+            row[6] = temp_df.iloc[0]['Today_Investigations']
             table_count += 1
             ucursor.updateRow(row)
 print(f'Total count of LTCF Events By Day Table updates is: {table_count}')
@@ -619,8 +628,8 @@ print(f'Total count of LTCF Events By Day Table updates is: {table_count}')
 # table_count = 0
 # #                   0           1                           2
 # table_fields = ['Date', 'Today_Positive_Residents', 'Today_Deceased_Residents', 
-#                 #       3
-#                 'Today_Positive_HCWs']
+#                 #       3                   4                   5                               6
+#                'Today_Positive_HCWs', 'Today_Outbreaks', 'Today_Outbreaks_Resolved', 'Today_Investigations']
 # with arcpy.da.UpdateCursor(ltcf_events_by_day, table_fields) as ucursor:
 #     print("Looping through rows to make updates ...")
 #     for row in ucursor:
@@ -631,6 +640,9 @@ print(f'Total count of LTCF Events By Day Table updates is: {table_count}')
 #         row[1] = temp_df.iloc[0]['Today_Positive_Residents']
 #         row[2] = temp_df.iloc[0]['Today_Deceased_Residents']
 #         row[3] = temp_df.iloc[0]['Today_Positive_HCWs']
+#         row[4] = temp_df.iloc[0]['Today_Outbreaks']
+#         row[5] = temp_df.iloc[0]['Today_Outbreaks_Resolved']
+#         row[6] = temp_df.iloc[0]['Today_Investigations']
 #         table_count += 1
 #         ucursor.updateRow(row)
 # print(f'Total count of LTCF Events By Day Table updates is: {table_count}')
