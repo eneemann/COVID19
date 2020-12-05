@@ -102,8 +102,8 @@ work_dir = r'C:\COVID19'
 
 # LIVE data layer (LTCF_Data)
 ltcf_service = r'https://services6.arcgis.com/KaHXE9OkiB9e63uE/arcgis/rest/services/LTCF_Data/FeatureServer/273'
-
-
+# LTCF Events by Day
+ltcf_events_by_day = r'https://services6.arcgis.com/KaHXE9OkiB9e63uE/arcgis/rest/services/LTCF_Events_by_Day/FeatureServer/0'
 
 # 1) Load CSV data with updates, prep, and clean up the data
 # Read in updates from CSV that was exported from Google Sheet (LTCF_Data)
@@ -297,8 +297,8 @@ covidunitpatonsite_updates = []
 ltcf_fields = ['UniqueID', 'Facility_Name', 'Facility_Type', 'Resolved_Y_N', 'Date_Resolved',
           #        5                    6                  7                     8
           'Positive_Patients', 'Deceased_Patients', 'Positive_HCWs', 'Postive_Patients_Desc', 
-          #         9                           10                              11                              12
-          'Active_Positive_Patients', 'Patient_Onsite_Status', 'COVID_Unit_Positive_Patients_Onsite', 'Dashboard_Display']
+          #         9                           10                              11                              12                  13
+          'Active_Positive_Patients', 'Patient_Onsite_Status', 'COVID_Unit_Positive_Patients_Onsite', 'Dashboard_Display', 'Dashboard_Display_Cat']
 cursor_time = time.time()
 with arcpy.da.UpdateCursor(ltcf_service, ltcf_fields) as ucursor:
     print("Looping through ltcf rows to make updates ...")
@@ -311,9 +311,11 @@ with arcpy.da.UpdateCursor(ltcf_service, ltcf_fields) as ucursor:
         temp_df = updates.loc[updates['UniqueID'] == row[0]]
         
         # Check if resolved status has changed
-        if row[3] != temp_df.iloc[0]['Resolved_Y_N']:
+        resolved_status = temp_df.iloc[0]['Resolved_Y_N']
+        status_check = resolved_status.upper()
+        if row[3] != status_check:
             print(f"    {row[0]}:    'Resolved_Y_N' field does not match    {row[3]}   {temp_df.iloc[0]['Resolved_Y_N']}")
-            row[3] = temp_df.iloc[0]['Resolved_Y_N']
+            row[3] = status_check
             ltcf_count += 1; used = True
             res_updates.append(row[0])
         
@@ -373,72 +375,86 @@ with arcpy.da.UpdateCursor(ltcf_service, ltcf_fields) as ucursor:
                 poshcw_updates.append(row[0])
         
         # Check if positive patient description needs updated
-        if (temp_df.iloc[0]['Active_Positive_Patients'] == 0 or temp_df.iloc[0]['Active_Positive_Patients'] == 9999) and temp_df.iloc[0]['Facility_Type'] not in ('COVID-unit', 'COVID-only'):
+        # This updated function removes the 'COVID-only' and 'COVID-unit' facility types and bases category on cumulative resident cases and not just those housed on site
+        if (temp_df.iloc[0]['Positive_Patients'] in (0, 9999) and temp_df.iloc[0]['Positive_HCWs'] in (0, 9999)):
             row[8] = 'Zero cases'
-            # Catch facilities that have no active patients, but had positive patients in the past and label as 'Less than 5'
-            if temp_df.iloc[0]['Positive_Patients'] > 0 and temp_df.iloc[0]['Positive_Patients'] < 9999 and temp_df.iloc[0]['Resolved_Y_N'] == 'N':
-                row[8] = 'Less than 5'
-        elif temp_df.iloc[0]['Facility_Type'] == 'COVID-unit':
-            row[8] = 'COVID-unit'
-        elif temp_df.iloc[0]['Facility_Type'] == 'COVID-only':
-            row[8] = 'COVID-only'
-        elif temp_df.iloc[0]['Active_Positive_Patients'] >= 5:
-            row[8] = '5 or more'
-        elif temp_df.iloc[0]['Active_Positive_Patients'] >= 1 and temp_df.iloc[0]['Active_Positive_Patients'] < 5:
-            row[8] = 'Less than 5'
+        elif temp_df.iloc[0]['Positive_Patients'] >= 21 and temp_df.iloc[0]['Positive_Patients'] < 9999:
+            row[8] = 'More than 20'
+        elif temp_df.iloc[0]['Positive_Patients'] >= 11 and temp_df.iloc[0]['Positive_Patients'] <= 20:
+            row[8] = '11 to 20'
+        elif temp_df.iloc[0]['Positive_Patients'] >= 5 and temp_df.iloc[0]['Positive_Patients'] <= 10:
+            row[8] = '5 to 10'
+        elif temp_df.iloc[0]['Positive_Patients'] >= 1 and temp_df.iloc[0]['Positive_Patients'] < 5:
+            row[8] = '1 to 4'
+        elif temp_df.iloc[0]['Positive_Patients'] in (0, 9999) and temp_df.iloc[0]['Positive_HCWs'] not in (0, 9999):
+            row[8] = 'No Resident Cases'
         else:
             print(f"    {row[0]}:    Unable to determine 'Postive_Patients_Desc', current value: {row[8]}    active positive patients: {temp_df.iloc[0]['Active_Positive_Patients']}")
         
-        # Check if active positive patients have changed
-        if row[9] != temp_df.iloc[0]['Active_Positive_Patients']:
-            if row[9] == 0 and temp_df.iloc[0]['Active_Positive_Patients'] == 9999:
-                pass
-            elif row[9] != 0 and temp_df.iloc[0]['Active_Positive_Patients'] == 9999:
-                print(f"    {row[0]}:    'Active_Positive_Patients' field does not match   {row[9]}   {temp_df.iloc[0]['Active_Positive_Patients']}   setting value to 0")
-                row[9] = 0
-                ltcf_count += 1; used = True
-                actpospat_updates.append(row[0])
-            else:
-                print(f"    {row[0]}:    'Active_Positive_Patients' field does not match   {row[9]},   {temp_df.iloc[0]['Active_Positive_Patients']}")
-                row[9] = temp_df.iloc[0]['Active_Positive_Patients']
-                ltcf_count += 1; used = True
-                actpospat_updates.append(row[0])
+        #### In current development, 'Active_Positive_Patients', 'Patient_Onsite_Status' and 'COVID_Unit_Positive_Patients_Onsite' are not tracked
+        # # Check if active positive patients have changed
+        # if row[9] != temp_df.iloc[0]['Active_Positive_Patients']:
+        #     if row[9] == 0 and temp_df.iloc[0]['Active_Positive_Patients'] == 9999:
+        #         pass
+        #     elif row[9] != 0 and temp_df.iloc[0]['Active_Positive_Patients'] == 9999:
+        #         print(f"    {row[0]}:    'Active_Positive_Patients' field does not match   {row[9]}   {temp_df.iloc[0]['Active_Positive_Patients']}   setting value to 0")
+        #         row[9] = 0
+        #         ltcf_count += 1; used = True
+        #         actpospat_updates.append(row[0])
+        #     else:
+        #         print(f"    {row[0]}:    'Active_Positive_Patients' field does not match   {row[9]},   {temp_df.iloc[0]['Active_Positive_Patients']}")
+        #         row[9] = temp_df.iloc[0]['Active_Positive_Patients']
+        #         ltcf_count += 1; used = True
+        #         actpospat_updates.append(row[0])
 
-        # Check if patient onsite status needs to be updated
-        # Facilities with active positive patients onsite
-        if (temp_df.iloc[0]['Active_Positive_Patients'] > 0 and temp_df.iloc[0]['Active_Positive_Patients'] < 9999) or temp_df.iloc[0]['COVID_Unit_Positive_Patients_Onsite'] == 'Y':
-            row[10] = 'Onsite'
-        # Facilities with positive patients who have been moved offsite
-        elif temp_df.iloc[0]['Active_Positive_Patients'] in (0, 9999) and temp_df.iloc[0]['Positive_Patients'] not in (0, 9999):
-            print(f"    {row[0]}:    'Patient_Onsite_Status' set to:  Offsite  ")
-            row[10] = 'Offsite'
-        # Facilities with no positive residents
-        elif temp_df.iloc[0]['Positive_Patients'] in (0, 9999) and temp_df.iloc[0]['Active_Positive_Patients'] in (0, 9999):
-            row[10] = 'Not Applicable'
-        else:
-            # If unable to determine, default to onsite
-            row[10] = 'Onsite'
-            print(f"    {row[0]}:    Unable to determine 'Patient_Onsite_Status', current value: {row[10]}    active positive patients: {temp_df.iloc[0]['Active_Positive_Patients']}")
+        # # Check if patient onsite status needs to be updated
+        # # Facilities with active positive patients onsite
+        # if (temp_df.iloc[0]['Active_Positive_Patients'] > 0 and temp_df.iloc[0]['Active_Positive_Patients'] < 9999) or temp_df.iloc[0]['COVID_Unit_Positive_Patients_Onsite'] == 'Y':
+        #     row[10] = 'Onsite'
+        # # Facilities with positive patients who have been moved offsite
+        # elif temp_df.iloc[0]['Active_Positive_Patients'] in (0, 9999) and temp_df.iloc[0]['Positive_Patients'] not in (0, 9999):
+        #     print(f"    {row[0]}:    'Patient_Onsite_Status' set to:  Offsite  ")
+        #     row[10] = 'Offsite'
+        # # Facilities with no positive residents
+        # elif temp_df.iloc[0]['Positive_Patients'] in (0, 9999) and temp_df.iloc[0]['Active_Positive_Patients'] in (0, 9999):
+        #     row[10] = 'Not Applicable'
+        # else:
+        #     # If unable to determine, default to onsite
+        #     row[10] = 'Onsite'
+        #     print(f"    {row[0]}:    Unable to determine 'Patient_Onsite_Status', current value: {row[10]}    active positive patients: {temp_df.iloc[0]['Active_Positive_Patients']}")
 
-        # Check if COVID-only or COVID-unit facilities have patients onsite
-        if row[11] != temp_df.iloc[0]['COVID_Unit_Positive_Patients_Onsite']:
-            print(f"    {row[0]}:    'COVID_Unit_Positive_Patients_Onsite' field does not match    {row[11]}   {temp_df.iloc[0]['COVID_Unit_Positive_Patients_Onsite']}")
-            row[11] = temp_df.iloc[0]['COVID_Unit_Positive_Patients_Onsite']
-            ltcf_count += 1; used = True
-            covidunitpatonsite_updates.append(row[0])
+        # # Check if COVID-only or COVID-unit facilities have patients onsite
+        # if row[11] != temp_df.iloc[0]['COVID_Unit_Positive_Patients_Onsite']:
+        #     print(f"    {row[0]}:    'COVID_Unit_Positive_Patients_Onsite' field does not match    {row[11]}   {temp_df.iloc[0]['COVID_Unit_Positive_Patients_Onsite']}")
+        #     row[11] = temp_df.iloc[0]['COVID_Unit_Positive_Patients_Onsite']
+        #     ltcf_count += 1; used = True
+        #     covidunitpatonsite_updates.append(row[0])
 
         # Check if the facility needs to be displayed on the dashboard
         if temp_df.iloc[0]['Facility_Type'] in ('Assisted Living', 'Nursing Home', 'Intermed Care/Intel Disabled', 'COVID-unit', 'COVID-only'):
-            if temp_df.iloc[0]['Positive_Patients'] > 0 and temp_df.iloc[0]['Positive_Patients'] < 9999 and temp_df.iloc[0]['Resolved_Y_N'] == 'N':
+            if (temp_df.iloc[0]['Positive_Patients'] not in (0, 9999) or temp_df.iloc[0]['Positive_HCWs'] not in (0, 9999)) and temp_df.iloc[0]['Resolved_Y_N'] == 'N':
                 row[12] = 'Y'
-                print(f"    {row[0]}: has positive patients, adding to dashboard display")
-            elif temp_df.iloc[0]['COVID_Unit_Positive_Patients_Onsite'] == 'Y':
-                row[12] = 'Y'
-                print(f"    {row[0]}: has positive patients in COVID-unit, adding to dashboard display")
+                print(f"    {row[0]}: has positive patients or HCWs, adding to dashboard display")
             else:
                 row[12] = 'N'
         else:
             row[12] = 'N'
+
+        # Check if dashboard display category needs to be updated, used for sorting the list of facilities with active outbreaks
+        if (temp_df.iloc[0]['Positive_Patients'] in (0, 9999) and temp_df.iloc[0]['Positive_HCWs'] in (0, 9999)):
+            row[13] = 9999
+        elif temp_df.iloc[0]['Positive_Patients'] >= 21 and temp_df.iloc[0]['Positive_Patients'] < 9999:
+            row[13] = 1
+        elif temp_df.iloc[0]['Positive_Patients'] >= 11 and temp_df.iloc[0]['Positive_Patients'] <= 20:
+            row[13] = 2
+        elif temp_df.iloc[0]['Positive_Patients'] >= 5 and temp_df.iloc[0]['Positive_Patients'] <= 10:
+            row[13] = 3
+        elif temp_df.iloc[0]['Positive_Patients'] >= 1 and temp_df.iloc[0]['Positive_Patients'] < 5:
+            row[13] = 4
+        elif temp_df.iloc[0]['Positive_Patients'] in (0, 9999) and temp_df.iloc[0]['Positive_HCWs'] not in (0, 9999):
+            row[13] = 5
+        else:
+            print(f"    {row[0]}:    Unable to determine 'Dashboard_Display_Cat'")
 
         ucursor.updateRow(row)
         if used:
@@ -455,7 +471,182 @@ print(f'Positive_HCWs updates: {len(poshcw_updates)}    {poshcw_updates}')
 print(f'Active_Positive_Patients updates: {len(actpospat_updates)}    {actpospat_updates}')
 print(f'COVID_Unit_Positive_Patients_Onsite updates: {len(covidunitpatonsite_updates)}        {covidunitpatonsite_updates}')
 
-   
+# Print out dashboard totals based on this update
+#               0               1                   2                   3                   4                   5                           6
+fields = ['Facility_Type', 'Resolved_Y_N', 'Positive_Patients', 'Deceased_Patients', 'Positive_HCWs', 'Postive_Patients_Desc', 'Dashboard_Display_Cat']
+query = '"Facility_Type" IN (\'Nursing Home\', \'Assisted Living\', \'Intermed Care/Intel Disabled\')'
+def find_daily_values(ltcf_fc):
+    with arcpy.da.SearchCursor(ltcf_fc, fields, query) as cursor:
+        facility_types = ['Nursing Home', 'Assisted Living', 'Intermed Care/Intel Disabled']
+        investigations = 0
+        outbreaks = 0
+        positive_patients = 0
+        deceased_patients = 0
+        positive_hcws = 0
+        more_than_20 = 0
+        eleven_to_20 = 0
+        five_to_ten = 0
+        one_to_four = 0
+        no_resident_cases = 0
+        resolved = 0
+        for row in cursor:
+            if row[0] in facility_types:
+                investigations += 1
+            if row[6] != 9999:
+                outbreaks += 1
+            if row[1] == 'Y' and row[6] != 9999:
+                resolved += 1
+            positive_patients += row[2]
+            deceased_patients += row[3]
+            positive_hcws += row[4]
+            if row[1] == 'N' and row[5] == 'More than 20':
+                more_than_20 += 1
+            elif row[1] == 'N' and row[5] == '11 to 20':
+                eleven_to_20 += 1
+            elif row[1] == 'N' and row[5] == '5 to 10':
+                five_to_ten += 1
+            elif row[1] == 'N' and row[5] == '1 to 4':
+                one_to_four += 1
+            elif row[1] == 'N' and row[5] == 'No Resident Cases':
+                no_resident_cases += 1
+        print('Total investigations:      ' + str(investigations))
+        print('Total outbreaks:        ' + str(outbreaks))
+        print('Total resolved:        ' + str(resolved))
+        print('Total positive patients:      ' + str(positive_patients))
+        print('Total deceased patients:      ' + str(deceased_patients))
+        print('Total positive HCWs:    ' + str(positive_hcws))
+        facilities_with_active_cases = more_than_20 + eleven_to_20 + five_to_ten + one_to_four + no_resident_cases
+        print('Total facilities with active cases:     ' + str(facilities_with_active_cases))
+        print('Total more than 20:    ' + str(more_than_20))
+        print('Total 11 to 20:     ' + str(eleven_to_20))
+        print('Total 5 to 10:    ' + str(five_to_ten))
+        print('Total 1 to 4:    ' + str(one_to_four))
+        print('Total No Resident Cases:     ' + str(no_resident_cases) + '\n')
+        arcpy.management.SelectLayerByAttribute(ltcf_fc, 'CLEAR_SELECTION')
+        return investigations, outbreaks, resolved, positive_patients, deceased_patients, positive_hcws, facilities_with_active_cases, more_than_20, eleven_to_20, five_to_ten, one_to_four, no_resident_cases
+
+total_investigations, total_outbreaks, total_outbreaks_resolved, total_positive_residents, total_deceased_residents, total_positive_HCWs, total_facilities_with_active_cases, count_more_than_20, count_11_to_20, count_5_to_10, count_1_to_4, count_no_resident_cases = find_daily_values(ltcf_service)
+
+# 5) APPEND MOST RECENT VALUES TO THE LTCF EVENTS BY DAY TABLE
+insert_fields = ['Date', 'Total_Investigations', 'Total_Outbreaks', 'Total_Outbreaks_Resolved',
+                'Total_Positive_Residents', 'Total_Deceased_Residents', 'Total_Positive_HCWs',
+                'Today_Facilities_Active_Cases', 'Today_Count_More_than_20', 'Today_Count_11_to_20',
+                'Today_Count_5_to_10', 'Today_Count_1_to_4', 'Today_Count_No_Res_Cases', 'SHAPE@XY']
+events_by_day_xy = (40, -111)
+insert_values = [(dt.date.today(), total_investigations, total_outbreaks, total_outbreaks_resolved,
+                total_positive_residents, total_deceased_residents, total_positive_HCWs,
+                total_facilities_with_active_cases, count_more_than_20, count_11_to_20,
+                count_5_to_10, count_1_to_4, count_no_resident_cases, events_by_day_xy)]
+with arcpy.da.InsertCursor(ltcf_events_by_day, insert_fields) as cursor:
+  for row in insert_values:
+      cursor.insertRow(row)
+print('Inserted values into LTCF events by day table...')
+
+
+# 6) CALCULATE DAILY AND CUMULATIVE NUBMERS IN PANDAS DATAFRAME
+ltcf_events_by_day_keep_fields = ['Date', 'Total_Investigations', 
+                    'Total_Positive_Residents', 'Total_Deceased_Residents', 'Total_Positive_HCWs',
+                    'Total_Outbreaks', 'Total_Outbreaks_Resolved']
+                    # 'Today_Facilities_Active_Cases', 'Today_Count_More_than_20', 'Today_Count_11_to_20',
+                    # 'Today_Count_5_to_10', 'Today_Count_1_to_4', 'Today_Count_No_Res_Cases'
+                    # 'Today_Positive_Residents', 'Today_Deceased_Residents', 'Today_Positive_HCWs', 'Today_Outbreaks',
+                    # 'Today_Outbreaks_Resolved', 'Today_Fac_Active_Cases_7_Day_Avg', 'Today_Outbreaks_7_Day_Avg',
+                    # 'Today_Outbreaks_Res_7_Day_Avg', 'Total_Positive_Res_7_Day_Avg', 'Total_Deceased_Res_7_Day_Avg',
+                    # 'Total_Positive_HCWs_7_Day_Avg', 'Today_Positive_Res_7_Day_Avg', 'Today_Deceased_Res_7_Day_Avg',
+                    # 'Today_Positive_HCWs_7_Day_Avg']
+
+# Delete in-memory table that will be used (if it already exists)
+if arcpy.Exists('in_memory\\temp_table'):
+    print("Deleting 'in_memory\\temp_table' ...")
+    arcpy.Delete_management('in_memory\\temp_table')
+    time.sleep(3)
+
+# Convert counts_by_day into pandas dataframe (table --> numpy array --> dataframe)
+arcpy.conversion.TableToTable(ltcf_events_by_day, 'in_memory', 'temp_table')
+day_arr = arcpy.da.TableToNumPyArray('in_memory\\temp_table', ltcf_events_by_day_keep_fields, null_value=0)
+day_df = pd.DataFrame(data=day_arr)
+
+# Convert string entries of 'None' to zeros ('0')
+mask = day_df.applymap(lambda x: x == 'None')
+cols = day_df.columns[(mask).any()]
+for col in day_df[cols]:
+    day_df.loc[mask[col], col] = '0'
+
+# Sort data ascending so most recent dates are at the bottom (highest index)
+day_df.head()
+day_df.sort_values('Date', inplace=True, ascending=True)
+day_df.head().to_string()
+day_df['Date'] = pd.to_datetime(day_df['Date']).dt.normalize()
+
+# Load test data during the test process
+# Rename variables below back to day_df after done testing
+# test_df = pd.read_csv(os.path.join(work_dir, 'by_day_testing.csv'))
+
+# Calculate daily increases using the pandas diff function
+# If any daily increases are negative (due to false positives or double-counting),
+# set increase to 0
+day_df['Today_Positive_Residents'] = day_df['Total_Positive_Residents'].diff().apply(lambda x: 0 if x < 0 else x)
+day_df['Today_Deceased_Residents'] = day_df['Total_Deceased_Residents'].diff().apply(lambda x: 0 if x < 0 else x)
+day_df['Today_Positive_HCWs'] = day_df['Total_Positive_HCWs'].diff().apply(lambda x: 0 if x < 0 else x)
+day_df['Today_Outbreaks'] = day_df['Total_Outbreaks'].diff().apply(lambda x: 0 if x < 0 else x)
+day_df['Today_Outbreaks_Resolved'] = day_df['Total_Outbreaks_Resolved'].diff().apply(lambda x: 0 if x < 0 else x)
+day_df['Today_Investigations'] = day_df['Total_Investigations'].diff().apply(lambda x: 0 if x < 0 else x)
+
+print(day_df)
+
+
+# 7a) UPDATE ***ONLY TODAY'S ROW*** IN COUNTS BY DAY TABLE WITH NEW NUMBERS
+# start_time = time.time()
+table_count = 0
+#                   0           1                           2
+table_fields = ['Date', 'Today_Positive_Residents', 'Today_Deceased_Residents', 
+                #       3                   4                   5                               6
+                'Today_Positive_HCWs', 'Today_Outbreaks', 'Today_Outbreaks_Resolved', 'Today_Investigations']
+with arcpy.da.UpdateCursor(ltcf_events_by_day, table_fields) as ucursor:
+    print("Looping through rows to make updates ...")
+    for row in ucursor:
+        if dt.datetime.now().date() == row[0].date():
+            print(row[0])
+            # select row of dataframe where date == date in hosted 'ltcf events by day' table
+            d = row[0].strftime('%Y-%m-%d')
+            temp_df = day_df.loc[day_df['Date'] == d].reset_index()
+            row[1] = temp_df.iloc[0]['Today_Positive_Residents']
+            row[2] = temp_df.iloc[0]['Today_Deceased_Residents']
+            row[3] = temp_df.iloc[0]['Today_Positive_HCWs']
+            row[4] = temp_df.iloc[0]['Today_Outbreaks']
+            row[5] = temp_df.iloc[0]['Today_Outbreaks_Resolved']
+            row[6] = temp_df.iloc[0]['Today_Investigations']
+            table_count += 1
+            ucursor.updateRow(row)
+print(f'Total count of LTCF Events By Day Table updates is: {table_count}')
+
+
+
+# # 7b) UPDATE ***ALL ROWS*** IN COUNTS BY DAY TABLE WITH NEW NUMBERS
+# # Should only need to run this once to make the calculations for all previous rows
+# # start_time = time.time()
+# table_count = 0
+# #                   0           1                           2
+# table_fields = ['Date', 'Today_Positive_Residents', 'Today_Deceased_Residents', 
+#                 #       3                   4                   5                               6
+#                'Today_Positive_HCWs', 'Today_Outbreaks', 'Today_Outbreaks_Resolved', 'Today_Investigations']
+# with arcpy.da.UpdateCursor(ltcf_events_by_day, table_fields) as ucursor:
+#     print("Looping through rows to make updates ...")
+#     for row in ucursor:
+#         print(row[0])
+#         # select row of dataframe where date == date in hosted 'ltcf events by day' table
+#         d = row[0].strftime('%Y-%m-%d')
+#         temp_df = day_df.loc[day_df['Date'] == d].reset_index()
+#         row[1] = temp_df.iloc[0]['Today_Positive_Residents']
+#         row[2] = temp_df.iloc[0]['Today_Deceased_Residents']
+#         row[3] = temp_df.iloc[0]['Today_Positive_HCWs']
+#         row[4] = temp_df.iloc[0]['Today_Outbreaks']
+#         row[5] = temp_df.iloc[0]['Today_Outbreaks_Resolved']
+#         row[6] = temp_df.iloc[0]['Today_Investigations']
+#         table_count += 1
+#         ucursor.updateRow(row)
+# print(f'Total count of LTCF Events By Day Table updates is: {table_count}')
+
 print("Script shutting down ...")
 # Stop timer and print end time in UTC
 readable_end = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
