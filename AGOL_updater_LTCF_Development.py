@@ -732,6 +732,74 @@ print(f'Total count of LTCF Events By Day Table updates is: {table_count}')
 #         ucursor.updateRow(row)
 # print(f'Total count of LTCF Events By Day Table updates is: {table_count}')
 
+# # 8) Update the Case Fatality Ratio for LTCFs compared with statewide cases and deaths
+# # Download the HAI Case Fatality Rates spreadsheet as a Microsoft Excel (.xlsx)
+# # This spreadsheet as a 'Utah' tab and a 'Resident' tab, so downloading Excel (instead of CSV)
+# # allows pandas to access both as data frames
+# print("Begin case fatality rate data update...")
+# utah_cases = pd.read_excel('Case_Fatality_Rates_latest.xlsx', sheet_name='Utah')
+# ltcf_cases = pd.read_excel('Case_Fatality_Rates_latest.xlsx', sheet_name='Resident')
+
+# # Change the column headers for the resident cases to remove underscores
+# ltcf_cases.columns = ['date', 'LTCF_Daily_Deaths', 'LTCF_Cumulative_Deaths']
+# # Remove the first row from the ltcf_cases data frame with a blank data
+# ltcf_cases.dropna(subset=['date'], inplace=True)
+# # Remove the 'Grand Total' entry at the end of the ltcf_cases data frame
+# ltcf_cases = ltcf_cases[ltcf_cases.date != 'Grand Total']
+# # the existing 'date' column for the ltcf_cases comes in as a string because of the Grand Total
+# # calculate a new column to join dates in the statewide case data with the ltcf case data
+# ltcf_cases['join_date'] = ltcf_cases['date'].astype('datetime64')
+
+# # The statewide case data has data for every day since the first confirmed case, while the 
+# # ltcf data only records dates where ltcf residents died.  Join the two data frames so that
+# # the dates line up.
+# combined = pd.merge(utah_cases, ltcf_cases, left_on='date', right_on='join_date', how='left')
+
+# # Forward fill the ltcf cumulative deaths to account for all of the days not included in the
+# # ltcf data (days where an ltcf resident didn't die).  Forward fill carries the previous cumulative
+# # total to the next entry if the next entry is null.
+# combined['LTCF_Cumulative_Deaths'].fillna(method='ffill', inplace=True)
+
+# # Fill in all of the null values for ltcf daily deaths with 0 (days a resident did not die)
+# combined['LTCF_Daily_Deaths'].fillna(0, inplace=True)
+
+# # Loop through all of the dates in the data set to update cases and deaths.  Calculate these for
+# # all rows because some cases and death data are back filled over time.
+# cfr_table_count = 0
+# #                   0           1                           2
+# cfr_table_fields = ['Date', 'Total_Positive_Residents', 'Statewide_Cases', 
+#                 #       3                   4                   5                               6
+#                 'Statewide_New_Daily_Cases', 'Res_Mortality_Ratio', 'Cumulative_Cases', 'Cumulative_Deaths',
+#                #        7                   8                    9                              10
+#                'LTCF_DeathRatio', 'UT_DeathRatio', 'Corrected_Res_Death', 'Correct_Cumulative_Res_Death']
+                
+
+# with arcpy.da.UpdateCursor(ltcf_events_by_day, cfr_table_fields) as ucursor:
+#     print("Looping through rows to make updates ...")
+    
+#     for row in ucursor:
+#         # Run the loop for every day except today because the statewide cases usually aren't updated for
+#         # the current day
+#         if dt.datetime.now().date() != row[0].date():
+#             print(row[0])
+#             # select row of dataframe where date == date in hosted 'ltcf events by day' table
+#             d = row[0].strftime('%Y-%m-%d')
+#             temp_df = combined.loc[combined['date_x'] == d].reset_index()
+#             row[2] = temp_df.iloc[0]['Cumulative_cases']
+#             row[3] = temp_df.iloc[0]['cases']
+#             row[4] = temp_df.iloc[0]['LTCF_Cumulative_Deaths'] / row[1] * 100
+#             row[5] = temp_df.iloc[0]['Cumulative_cases']
+#             row[6] = temp_df.iloc[0]['Cumulative_deaths']
+#             row[7] = temp_df.iloc[0]['LTCF_Cumulative_Deaths'] / row[1] * 100
+#             row[8] = temp_df.iloc[0]['Cumulative_deaths'] / temp_df.iloc[0]['Cumulative_cases'] * 100
+#             row[9] = temp_df.iloc[0]['LTCF_Daily_Deaths']
+#             row[10] = temp_df.iloc[0]['LTCF_Cumulative_Deaths']
+            
+#             cfr_table_count += 1
+#             ucursor.updateRow(row)
+# print(f'Total count of LTCF Events By Day Table updates is: {cfr_table_count}')
+
+
 print("Script shutting down ...")
 # Stop timer and print end time in UTC
 readable_end = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())

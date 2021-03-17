@@ -492,7 +492,7 @@ print(f'Active_Positive_Patients updates: {len(actpospat_updates)}    {actpospat
 print(f'COVID_Unit_Positive_Patients_Onsite updates: {len(covidunitpatonsite_updates)}        {covidunitpatonsite_updates}')
 
 # Print out dashboard totals based on this update
-#               0               1                   2                   3                   4                   5                           6
+#              0               1                   2                   3                   4                   5                           6
 fields = ['Facility_Type', 'Resolved_Y_N', 'Positive_Patients', 'Deceased_Patients', 'Positive_HCWs', 'Postive_Patients_Desc', 'Dashboard_Display_Cat']
 query = '"Facility_Type" IN (\'Nursing Home\', \'Assisted Living\', \'Intermed Care/Intel Disabled\')'
 def find_daily_values(ltcf_fc):
@@ -568,11 +568,11 @@ ltcf_events_by_day_keep_fields = ['Date', 'Total_Investigations',
                     'Total_Positive_Residents', 'Total_Deceased_Residents', 'Total_Positive_HCWs',
                     'Total_Outbreaks', 'Total_Outbreaks_Resolved',
                     'Today_Facilities_Active_Cases', 
-                    # 'Today_Count_More_than_20', 'Today_Count_11_to_20',
-                    # 'Today_Count_5_to_10', 'Today_Count_1_to_4', 'Today_Count_No_Res_Cases'
+                    'Today_Count_More_than_20', 'Today_Count_11_to_20',
+                    'Today_Count_5_to_10', 'Today_Count_1_to_4', 'Today_Count_No_Res_Cases',
                     'Today_Positive_Residents', 'Today_Deceased_Residents', 'Today_Positive_HCWs', 'Today_Outbreaks',
                     'Today_Outbreaks_Resolved'] 
-                    # 'Today_Fac_Active_Cases_7_Day_Avg', 'Today_Outbreaks_7_Day_Avg',
+                    #'Today_Fac_Active_Cases_7_Day_Avg', 'Today_Outbreaks_7_Day_Avg',
                     # 'Today_Outbreaks_Res_7_Day_Avg', 'Total_Positive_Res_7_Day_Avg', 'Total_Deceased_Res_7_Day_Avg',
                     # 'Total_Positive_HCWs_7_Day_Avg', 'Today_Positive_Res_7_Day_Avg', 'Today_Deceased_Res_7_Day_Avg',
                     # 'Today_Positive_HCWs_7_Day_Avg']
@@ -622,13 +622,17 @@ day_df['Total_Positive_HCWs_7_Day_Avg'] = day_df['Total_Positive_HCWs'].rolling(
 day_df['Today_Positive_Res_7_Day_Avg'] = day_df['Today_Positive_Residents'].rolling(window=7).mean()
 day_df['Today_Deceased_Res_7_Day_Avg'] = day_df['Today_Deceased_Residents'].rolling(window=7).mean()
 day_df['Today_Positive_HCWs_7_Day_Avg'] = day_df['Today_Positive_HCWs'].rolling(window=7).mean()
-
+day_df['Fac_More_than_20_7_Day_Avg'] = day_df['Today_Count_More_than_20'].rolling(window=7).mean()
+day_df['Fac_11_to_20_7_Day_Avg'] = day_df['Today_Count_11_to_20'].rolling(window=7).mean()
+day_df['Fac_5_to_10_7_Day_Avg'] = day_df['Today_Count_5_to_10'].rolling(window=7).mean()
+day_df['Fac_1_to_4_7_Day_Avg'] = day_df['Today_Count_1_to_4'].rolling(window=7).mean()
+day_df['Fac_No_Res_Cases_7_Day_Avg'] = day_df['Today_Count_No_Res_Cases'].rolling(window=7).mean()
 
 print(day_df)
 
 
 # 7a) UPDATE ***ONLY TODAY'S ROW*** IN COUNTS BY DAY TABLE WITH NEW NUMBERS
-# start_time = time.time()
+start_time = time.time()
 table_count = 0
 #                   0           1                           2
 table_fields = ['Date', 'Today_Positive_Residents', 'Today_Deceased_Residents', 
@@ -639,7 +643,11 @@ table_fields = ['Date', 'Today_Positive_Residents', 'Today_Deceased_Residents',
                 #               10                                  11                                   12
                 'Total_Positive_Res_7_Day_Avg','Total_Deceased_Res_7_Day_Avg','Total_Positive_HCWs_7_Day_Avg',
                 #            13                               14                            15
-                'Today_Positive_Res_7_Day_Avg','Today_Deceased_Res_7_Day_Avg','Today_Positive_HCWs_7_Day_Avg']
+                'Today_Positive_Res_7_Day_Avg','Today_Deceased_Res_7_Day_Avg','Today_Positive_HCWs_7_Day_Avg',
+                #               16                      17                          18
+                'Fac_More_than_20_7_Day_Avg', 'Fac_11_to_20_7_Day_Avg', 'Fac_5_to_10_7_Day_Avg',
+                #           19                      20
+                'Fac_1_to_4_7_Day_Avg', 'Fac_No_Res_Cases_7_Day_Avg']
 
 with arcpy.da.UpdateCursor(ltcf_events_by_day, table_fields) as ucursor:
     print("Looping through rows to make updates ...")
@@ -664,6 +672,11 @@ with arcpy.da.UpdateCursor(ltcf_events_by_day, table_fields) as ucursor:
             row[13] = temp_df.iloc[0]['Today_Positive_Res_7_Day_Avg']
             row[14] = temp_df.iloc[0]['Today_Deceased_Res_7_Day_Avg']
             row[15] = temp_df.iloc[0]['Today_Positive_HCWs_7_Day_Avg']
+            row[16] = temp_df.iloc[0]['Fac_More_than_20_7_Day_Avg']
+            row[17] = temp_df.iloc[0]['Fac_11_to_20_7_Day_Avg']
+            row[18] = temp_df.iloc[0]['Fac_5_to_10_7_Day_Avg']
+            row[19] = temp_df.iloc[0]['Fac_1_to_4_7_Day_Avg']
+            row[20] = temp_df.iloc[0]['Fac_No_Res_Cases_7_Day_Avg']
             table_count += 1
             ucursor.updateRow(row)
 print(f'Total count of LTCF Events By Day Table updates is: {table_count}')
@@ -681,21 +694,26 @@ print(f'Total count of LTCF Events By Day Table updates is: {table_count}')
 #                 #               10                                  11                                   12
 #                 'Total_Positive_Res_7_Day_Avg','Total_Deceased_Res_7_Day_Avg','Total_Positive_HCWs_7_Day_Avg',
 #                 #            13                               14                            15
-#                 'Today_Positive_Res_7_Day_Avg','Today_Deceased_Res_7_Day_Avg','Today_Positive_HCWs_7_Day_Avg']
+#                 'Today_Positive_Res_7_Day_Avg','Today_Deceased_Res_7_Day_Avg','Today_Positive_HCWs_7_Day_Avg',
+#                 #               16                      17                          18
+#                 'Fac_More_than_20_7_Day_Avg', 'Fac_11_to_20_7_Day_Avg', 'Fac_5_to_10_7_Day_Avg',
+#                 #           19                      20
+#                 'Fac_1_to_4_7_Day_Avg', 'Fac_No_Res_Cases_7_Day_Avg']
 
 # with arcpy.da.UpdateCursor(ltcf_events_by_day, table_fields) as ucursor:
 #     print("Looping through rows to make updates ...")
+    
 #     for row in ucursor:
 #         print(row[0])
 #         # select row of dataframe where date == date in hosted 'ltcf events by day' table
 #         d = row[0].strftime('%Y-%m-%d')
 #         temp_df = day_df.loc[day_df['Date'] == d].reset_index()
-#         row[1] = temp_df.iloc[0]['Today_Positive_Residents']
-#         row[2] = temp_df.iloc[0]['Today_Deceased_Residents']
-#         row[3] = temp_df.iloc[0]['Today_Positive_HCWs']
-#         row[4] = temp_df.iloc[0]['Today_Outbreaks']
-#         row[5] = temp_df.iloc[0]['Today_Outbreaks_Resolved']
-#         row[6] = temp_df.iloc[0]['Today_Investigations']
+#         # row[1] = temp_df.iloc[0]['Today_Positive_Residents']
+#         # row[2] = temp_df.iloc[0]['Today_Deceased_Residents']
+#         # row[3] = temp_df.iloc[0]['Today_Positive_HCWs']
+#         # row[4] = temp_df.iloc[0]['Today_Outbreaks']
+#         # row[5] = temp_df.iloc[0]['Today_Outbreaks_Resolved']
+#         # row[6] = temp_df.iloc[0]['Today_Investigations']
 #         row[7] = temp_df.iloc[0]['Today_Fac_Active_Cases_7_Day_Av']
 #         row[8] = temp_df.iloc[0]['Today_Outbreaks_7_Day_Avg']
 #         row[9] = temp_df.iloc[0]['Today_Outbreaks_Res_7_Day_Avg']
@@ -705,9 +723,75 @@ print(f'Total count of LTCF Events By Day Table updates is: {table_count}')
 #         row[13] = temp_df.iloc[0]['Today_Positive_Res_7_Day_Avg']
 #         row[14] = temp_df.iloc[0]['Today_Deceased_Res_7_Day_Avg']
 #         row[15] = temp_df.iloc[0]['Today_Positive_HCWs_7_Day_Avg']
+#         row[16] = temp_df.iloc[0]['Fac_More_than_20_7_Day_Avg']
+#         row[17] = temp_df.iloc[0]['Fac_11_to_20_7_Day_Avg']
+#         row[18] = temp_df.iloc[0]['Fac_5_to_10_7_Day_Avg']
+#         row[19] = temp_df.iloc[0]['Fac_1_to_4_7_Day_Avg']
+#         row[20] = temp_df.iloc[0]['Fac_No_Res_Cases_7_Day_Avg']
 #         table_count += 1
 #         ucursor.updateRow(row)
 # print(f'Total count of LTCF Events By Day Table updates is: {table_count}')
+
+# # 8) Update the Case Fatality Ratio for LTCFs compared with statewide cases and deaths
+# # Download the HAI Case Fatality Rates spreadsheet as a Microsoft Excel (.xlsx)
+# # This spreadsheet as a 'Utah' tab and a 'Resident' tab, so downloading Excel (instead of CSV)
+# # allows pandas to access both as data frames
+# print("Begin case fatality rate data update...")
+# utah_cases = pd.read_excel('Case_Fatality_Rates_latest.xlsx', sheet_name='Utah')
+# ltcf_cases = pd.read_excel('Case_Fatality_Rates_latest.xlsx', sheet_name='Resident')
+
+# # Change the column headers for the resident cases to remove underscores
+# ltcf_cases.columns = ['date', 'LTCF_Daily_Deaths', 'LTCF_Cumulative_Deaths']
+# # Remove the first row from the ltcf_cases data frame with a blank data
+# ltcf_cases.dropna(subset=['date'], inplace=True)
+# # Remove the 'Grand Total' entry at the end of the ltcf_cases data frame
+# ltcf_cases = ltcf_cases[ltcf_cases.date != 'Grand Total']
+# # the existing 'date' column for the ltcf_cases comes in as a string because of the Grand Total
+# # calculate a new column to join dates in the statewide case data with the ltcf case data
+# ltcf_cases['join_date'] = ltcf_cases['date'].astype('datetime64')
+
+# # The statewide case data has data for every day since the first confirmed case, while the 
+# # ltcf data only records dates where ltcf residents died.  Join the two data frames so that
+# # the dates line up.
+# combined = pd.merge(utah_cases, ltcf_cases, left_on='date', right_on='join_date', how='left')
+
+# # Forward fill the ltcf cumulative deaths to account for all of the days not included in the
+# # ltcf data (days where an ltcf resident didn't die).  Forward fill carries the previous cumulative
+# # total to the next entry if the next entry is null.
+# combined['LTCF_Cumulative_Deaths'].fillna(method='ffill', inplace=True)
+
+# # Fill in all of the null values for ltcf daily deaths with 0 (days a resident did not die)
+# combined['LTCF_Daily_Deaths'].fillna(0, inplace=True)
+
+# # Loop through all of the dates in the data set to update cases and deaths.  Calculate these for
+# # all rows because some cases and death data are back filled over time.
+# cfr_table_count = 0
+# #                   0           1                           2
+# cfr_table_fields = ['Date', 'Total_Positive_Residents', 'UT_Cumulative_Cases', 
+#                 #       3                          4                                5               6
+#                 'UT_Cumulative_Deaths', 'Corrected_Res_Cumulative_Deaths', 'LTCF_DeathRatio', 'UT_DeathRatio']
+                
+
+# with arcpy.da.UpdateCursor(ltcf_events_by_day, cfr_table_fields) as ucursor:
+#     print("Looping through rows to make updates ...")
+    
+#     for row in ucursor:
+#         # Run the loop for every day except today because the statewide cases usually aren't updated for
+#         # the current day
+#         if dt.datetime.now().date() != row[0].date():
+#             print(row[0])
+#         # select row of dataframe where date == date in hosted 'ltcf events by day' table
+#         d = row[0].strftime('%Y-%m-%d')
+#         temp_df = combined.loc[combined['date_x'] == d].reset_index()
+#         row[2] = temp_df.iloc[0]['Cumulative_cases']
+#         row[3] = temp_df.iloc[0]['Cumulative_deaths']
+#         row[4] = temp_df.iloc[0]['LTCF_Cumulative_Deaths']
+#         row[5] = temp_df.iloc[0]['LTCF_Cumulative_Deaths'] / row[1] * 100
+#         row[6] = temp_df.iloc[0]['Cumulative_deaths'] / temp_df.iloc[0]['Cumulative_cases'] * 100
+        
+#         table_count += 1
+#         ucursor.updateRow(row)
+# print(f'Total count of LTCF Events By Day Table updates is: {cfr_table_count}')
 
 print("Script shutting down ...")
 # Stop timer and print end time in UTC
