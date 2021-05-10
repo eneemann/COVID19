@@ -112,18 +112,16 @@ updates.sort_values('ID', inplace=True)
 
 # Drop updates columns that aren't needed
 # Facility_Type will be dropped, then recreated from 'Dashboard Facility Type')
-# Renamed 'Unnamed: 16' to 'COVID_Unit_Positive_Patients_Onsite'
 updates.drop(columns=['Facility_Type', 'Notes'],  inplace=True)
 
 # Reaname updates columns to match service
 col_renames = {'ID': 'OID',
-                'Dashboard Facility Type': 'Facility_Type',
-                'Positive Patients': 'Positive_Patients',
-                'Active Positive Patients': 'Active_Positive_Patients', # not in ltcf data originally, but currently part of the AGOL schema
-                'Deceased Patients': 'Deceased_Patients',
-                'Positive HCWs': 'Positive_HCWs',
-                'Positive Patient Description': 'Positive_Patients_Desc',
-                'Last Positive Resident': 'LastPos_Resident'}# *** JULIA ADD 1/24 ***
+               'Dashboard Facility Type': 'Facility_Type',
+               'Positive Patients': 'Positive_Patients',
+               'Deceased Patients': 'Deceased_Patients',
+               'Positive HCWs': 'Positive_HCWs',
+               'Positive Patient Description': 'Positive_Patients_Desc',
+               'Last Positive Resident': 'LastPos_Resident'}# *** JULIA ADD 1/24 ***
 
 updates.rename(col_renames, axis='columns', inplace=True)
 
@@ -137,7 +135,7 @@ updates = updates.applymap(lambda x: np.nan if isinstance(x, str) and not x else
 
 # Convert columns to appropriate type for comparisons
 int_fields = ['OID', 'UniqueID', 'Positive_Patients', 'Deceased_Patients',
-              'Positive_HCWs', 'Active_Positive_Patients']
+              'Positive_HCWs']
 str_fields = ['Positive_Patients_Desc']
 dt_fields = ['Notification_Date', 'LastPos_Resident']# *** JULIA EDIT 1/24 ***
 
@@ -145,7 +143,6 @@ dt_fields = ['Notification_Date', 'LastPos_Resident']# *** JULIA EDIT 1/24 ***
 # Intermediate step: convert NaNs to 9999 for integers, to 'N' for Resolved_Y_N
 updates[int_fields] = updates[int_fields].fillna(9999)
 updates['Resolved_Y_N'] = updates['Resolved_Y_N'].fillna('N')
-updates['COVID_Unit_Positive_Patients_Onsite'] = updates['COVID_Unit_Positive_Patients_Onsite'].fillna('N')
 
 # Cast columns as proper data types
 updates[int_fields] = updates[int_fields].astype(int)
@@ -159,11 +156,10 @@ keep_fields = ['OID', 'UniqueID', 'Facility_Name', 'Address',
                 'City', 'ZIP_Code', 'Facility_Type', 'LHD',
                 'Resolved_Y_N', 'Date_Resolved', 'Longitude',
                 'Latitude', 'Notification_Date', 'Positive_Patients',
-                'Deceased_Patients', 'Positive_HCWs', 'Positive_Patients_Desc', 'COVID_Unit_Positive_Patients_Onsite', 'LastPos_Resident'] # *** JULIA ADD 1/24 ***
+                'Deceased_Patients', 'Positive_HCWs', 'Positive_Patients_Desc', 'LastPos_Resident'] # *** JULIA ADD 1/24 ***
 
 # Reoder columns to updates to match ltcf data
 cols_reorder = keep_fields.copy()
-cols_reorder.append('Active_Positive_Patients')
 updates = updates[cols_reorder]
 
 # Delete in-memory table that will be used (if it already exists)
@@ -198,8 +194,6 @@ ltcf_df = pd.DataFrame(data=ltcf_arr)
 # Strip whitespace from string fields
 # ltcf_df = ltcf_df.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
 ltcf_df = ltcf_df.applymap(lambda x: x.strip() if type(x) == str else x)
-
-
 
 # 3) Add new spreadsheet rows to LTCF_Data feature layer
 # Subset new rows into separate dataframe and replace 9999s with 0s
@@ -242,7 +236,7 @@ if updates_geo.shape[0] > 0:
                     'City', 'ZIP_Code', 'Facility_Type', 'LHD',
                     'Resolved_Y_N', 'Date_Resolved', 'Notification_Date', 'Positive_Patients',
                     'Deceased_Patients', 'Positive_HCWs', 'CreationDate', 'Creator',
-                    'EditDate', 'Editor', 'SHAPE@XY', 'Active_Positive_Patients', 'COVID_Unit_Positive_Patients_Onsite']
+                    'EditDate', 'Editor', 'SHAPE@XY']
         
     def insert_row(row):
         xy = (row['x'], row['y'])
@@ -264,8 +258,6 @@ if updates_geo.shape[0] > 0:
                   dt.datetime.now(),
                   f'Python Script by {username}',
                   xy,
-                  row['Active_Positive_Patients'],
-                  row['COVID_Unit_Positive_Patients_Onsite'],
                   ]
         
         print(f"Adding {row['UniqueID']}:  {row['Facility_Name']} ...")
@@ -291,18 +283,14 @@ resdate_updates = []
 pospat_updates = []
 decpat_updates = []
 poshcw_updates = []
-actpospat_updates = []
-patonsitestatus_updates = []
-covidunitpatonsite_updates = []
 lastpos_updates = [] # *** JULIA ADD 1/24 ***
 
-# JULIA ADD 13, 14, 15
 #                   0             1                2                3               4
 ltcf_fields = ['UniqueID', 'Facility_Name', 'Facility_Type', 'Resolved_Y_N', 'Date_Resolved',
           #        5                    6                  7                     8
           'Positive_Patients', 'Deceased_Patients', 'Positive_HCWs', 'Postive_Patients_Desc', 
-          #         9                           10                              11                              12                  13                      14         
-          'Active_Positive_Patients', 'Patient_Onsite_Status', 'COVID_Unit_Positive_Patients_Onsite', 'Dashboard_Display', 'Dashboard_Display_Cat', 'LastPos_Resident']
+          #         9                    10                      11
+          'Dashboard_Display', 'Dashboard_Display_Cat', 'LastPos_Resident']
 cursor_time = time.time()
 with arcpy.da.UpdateCursor(ltcf_service, ltcf_fields) as ucursor:
     print("Looping through ltcf rows to make updates ...")
@@ -345,7 +333,6 @@ with arcpy.da.UpdateCursor(ltcf_service, ltcf_fields) as ucursor:
             else:
                 print(f"    {row[0]}:    'Positive_Patients' field does not match   {row[5]}   {temp_df.iloc[0]['Positive_Patients']}")
                 row[5] = temp_df.iloc[0]['Positive_Patients']
-                #row[13] = dt.datetime.now().strftime('%Y-%m-%d') #JULIA ADD
                 ltcf_count += 1; used = True
                 pospat_updates.append(row[0])
                 
@@ -361,7 +348,6 @@ with arcpy.da.UpdateCursor(ltcf_service, ltcf_fields) as ucursor:
             else:
                 print(f"    {row[0]}:    'Deceased_Patients' field does not match   {row[6]}   {temp_df.iloc[0]['Deceased_Patients']}")
                 row[6] = temp_df.iloc[0]['Deceased_Patients']
-                #row[15] = dt.datetime.now().strftime('%Y-%m-%d') #JULIA ADD
                 ltcf_count += 1; used = True
                 decpat_updates.append(row[0])
         
@@ -377,20 +363,19 @@ with arcpy.da.UpdateCursor(ltcf_service, ltcf_fields) as ucursor:
             else:
                 print(f"    {row[0]}:    'Positive_HCWs' field does not match   {row[7]},   {temp_df.iloc[0]['Positive_HCWs']}")
                 row[7] = temp_df.iloc[0]['Positive_HCWs']
-                #row[14] = dt.datetime.now().strftime('%Y-%m-%d') #JULIA ADD
                 ltcf_count += 1; used = True
                 poshcw_updates.append(row[0])
                 
         # *** JULIA ADD 1/24 ***     
         # Check if last positive resident has changed
-        if row[14] != temp_df.iloc[0]['LastPos_Resident']:
-            if row[14] is None and str(temp_df.iloc[0]['LastPos_Resident']) == 'NaT':
+        if row[11] != temp_df.iloc[0]['LastPos_Resident']:
+            if row[11] is None and str(temp_df.iloc[0]['LastPos_Resident']) == 'NaT':
                 pass
-            #elif  row[14] < datetime.datetime(2020,1,1,23,59,59,99):
-                #row[14] = None 
+            #elif  row[11] < datetime.datetime(2020,1,1,23,59,59,99):
+                #row[11] = None 
             else:
-                print(f"    {row[0]}:    'LastPos_Resident' field does not match   {row[14]}   {temp_df.iloc[0]['LastPos_Resident']}")
-                row[14] = temp_df.iloc[0]['LastPos_Resident']
+                print(f"    {row[0]}:    'LastPos_Resident' field does not match   {row[11]}   {temp_df.iloc[0]['LastPos_Resident']}")
+                row[11] = temp_df.iloc[0]['LastPos_Resident']
                 ltcf_count += 1; used = True
                 lastpos_updates.append(row[0])
         
@@ -409,70 +394,31 @@ with arcpy.da.UpdateCursor(ltcf_service, ltcf_fields) as ucursor:
         elif temp_df.iloc[0]['Positive_Patients'] in (0, 9999) and temp_df.iloc[0]['Positive_HCWs'] not in (0, 9999):
             row[8] = 'No Resident Cases'
         else:
-            print(f"    {row[0]}:    Unable to determine 'Postive_Patients_Desc', current value: {row[8]}    active positive patients: {temp_df.iloc[0]['Active_Positive_Patients']}")
-        
-        #### In current development, 'Active_Positive_Patients', 'Patient_Onsite_Status' and 'COVID_Unit_Positive_Patients_Onsite' are not tracked
-        # # Check if active positive patients have changed
-        # if row[9] != temp_df.iloc[0]['Active_Positive_Patients']:
-        #     if row[9] == 0 and temp_df.iloc[0]['Active_Positive_Patients'] == 9999:
-        #         pass
-        #     elif row[9] != 0 and temp_df.iloc[0]['Active_Positive_Patients'] == 9999:
-        #         print(f"    {row[0]}:    'Active_Positive_Patients' field does not match   {row[9]}   {temp_df.iloc[0]['Active_Positive_Patients']}   setting value to 0")
-        #         row[9] = 0
-        #         ltcf_count += 1; used = True
-        #         actpospat_updates.append(row[0])
-        #     else:
-        #         print(f"    {row[0]}:    'Active_Positive_Patients' field does not match   {row[9]},   {temp_df.iloc[0]['Active_Positive_Patients']}")
-        #         row[9] = temp_df.iloc[0]['Active_Positive_Patients']
-        #         ltcf_count += 1; used = True
-        #         actpospat_updates.append(row[0])
-
-        # # Check if patient onsite status needs to be updated
-        # # Facilities with active positive patients onsite
-        # if (temp_df.iloc[0]['Active_Positive_Patients'] > 0 and temp_df.iloc[0]['Active_Positive_Patients'] < 9999) or temp_df.iloc[0]['COVID_Unit_Positive_Patients_Onsite'] == 'Y':
-        #     row[10] = 'Onsite'
-        # # Facilities with positive patients who have been moved offsite
-        # elif temp_df.iloc[0]['Active_Positive_Patients'] in (0, 9999) and temp_df.iloc[0]['Positive_Patients'] not in (0, 9999):
-        #     print(f"    {row[0]}:    'Patient_Onsite_Status' set to:  Offsite  ")
-        #     row[10] = 'Offsite'
-        # # Facilities with no positive residents
-        # elif temp_df.iloc[0]['Positive_Patients'] in (0, 9999) and temp_df.iloc[0]['Active_Positive_Patients'] in (0, 9999):
-        #     row[10] = 'Not Applicable'
-        # else:
-        #     # If unable to determine, default to onsite
-        #     row[10] = 'Onsite'
-        #     print(f"    {row[0]}:    Unable to determine 'Patient_Onsite_Status', current value: {row[10]}    active positive patients: {temp_df.iloc[0]['Active_Positive_Patients']}")
-
-        # # Check if COVID-only or COVID-unit facilities have patients onsite
-        # if row[11] != temp_df.iloc[0]['COVID_Unit_Positive_Patients_Onsite']:
-        #     print(f"    {row[0]}:    'COVID_Unit_Positive_Patients_Onsite' field does not match    {row[11]}   {temp_df.iloc[0]['COVID_Unit_Positive_Patients_Onsite']}")
-        #     row[11] = temp_df.iloc[0]['COVID_Unit_Positive_Patients_Onsite']
-        #     ltcf_count += 1; used = True
-        #     covidunitpatonsite_updates.append(row[0])
+            print(f"    {row[0]}:    Unable to determine 'Postive_Patients_Desc', current value: {row[8]}")
 
         # Check if the facility needs to be displayed on the dashboard
         if temp_df.iloc[0]['Facility_Type'] in ('Assisted Living', 'Nursing Home', 'Intermed Care/Intel Disabled', 'COVID-unit', 'COVID-only'):
             if (temp_df.iloc[0]['Positive_Patients'] not in (0, 9999) or temp_df.iloc[0]['Positive_HCWs'] not in (0, 9999)) and temp_df.iloc[0]['Resolved_Y_N'] == 'N':
-                row[12] = 'Y'
+                row[9] = 'Y'
                 print(f"    {row[0]}: has positive patients or HCWs, adding to dashboard display")
             else:
-                row[12] = 'N'
+                row[9] = 'N'
         else:
-            row[12] = 'N'
+            row[9] = 'N'
 
         # Check if dashboard display category needs to be updated, used for sorting the list of facilities with active outbreaks
         if (temp_df.iloc[0]['Positive_Patients'] in (0, 9999) and temp_df.iloc[0]['Positive_HCWs'] in (0, 9999)):
-            row[13] = 9999
+            row[10] = 9999
         elif temp_df.iloc[0]['Positive_Patients'] >= 21 and temp_df.iloc[0]['Positive_Patients'] < 9999:
-            row[13] = 1
+            row[10] = 1
         elif temp_df.iloc[0]['Positive_Patients'] >= 11 and temp_df.iloc[0]['Positive_Patients'] <= 20:
-            row[13] = 2
+            row[10] = 2
         elif temp_df.iloc[0]['Positive_Patients'] >= 5 and temp_df.iloc[0]['Positive_Patients'] <= 10:
-            row[13] = 3
+            row[10] = 3
         elif temp_df.iloc[0]['Positive_Patients'] >= 1 and temp_df.iloc[0]['Positive_Patients'] < 5:
-            row[13] = 4
+            row[10] = 4
         elif temp_df.iloc[0]['Positive_Patients'] in (0, 9999) and temp_df.iloc[0]['Positive_HCWs'] not in (0, 9999):
-            row[13] = 5
+            row[10] = 5
         else:
             print(f"    {row[0]}:    Unable to determine 'Dashboard_Display_Cat'")
 
@@ -488,11 +434,10 @@ print(f'Date_Resolved updates: {len(resdate_updates)}    {resdate_updates}')
 print(f'Positive_Patients updates: {len(pospat_updates)}    {pospat_updates}')
 print(f'Deceased_Patients updates: {len(decpat_updates)}    {decpat_updates}')
 print(f'Positive_HCWs updates: {len(poshcw_updates)}    {poshcw_updates}')
-print(f'Active_Positive_Patients updates: {len(actpospat_updates)}    {actpospat_updates}')
-print(f'COVID_Unit_Positive_Patients_Onsite updates: {len(covidunitpatonsite_updates)}        {covidunitpatonsite_updates}')
+
 
 # Print out dashboard totals based on this update
-#              0               1                   2                   3                   4                   5                           6
+#               0               1                   2                   3                   4                   5                           6
 fields = ['Facility_Type', 'Resolved_Y_N', 'Positive_Patients', 'Deceased_Patients', 'Positive_HCWs', 'Postive_Patients_Desc', 'Dashboard_Display_Cat']
 query = '"Facility_Type" IN (\'Nursing Home\', \'Assisted Living\', \'Intermed Care/Intel Disabled\')'
 def find_daily_values(ltcf_fc):
@@ -571,11 +516,7 @@ ltcf_events_by_day_keep_fields = ['Date', 'Total_Investigations',
                     'Today_Count_More_than_20', 'Today_Count_11_to_20',
                     'Today_Count_5_to_10', 'Today_Count_1_to_4', 'Today_Count_No_Res_Cases',
                     'Today_Positive_Residents', 'Today_Deceased_Residents', 'Today_Positive_HCWs', 'Today_Outbreaks',
-                    'Today_Outbreaks_Resolved'] 
-                    #'Today_Fac_Active_Cases_7_Day_Avg', 'Today_Outbreaks_7_Day_Avg',
-                    # 'Today_Outbreaks_Res_7_Day_Avg', 'Total_Positive_Res_7_Day_Avg', 'Total_Deceased_Res_7_Day_Avg',
-                    # 'Total_Positive_HCWs_7_Day_Avg', 'Today_Positive_Res_7_Day_Avg', 'Today_Deceased_Res_7_Day_Avg',
-                    # 'Today_Positive_HCWs_7_Day_Avg']
+                    'Today_Outbreaks_Resolved']
 
 # Delete in-memory table that will be used (if it already exists)
 if arcpy.Exists('in_memory\\temp_table'):
