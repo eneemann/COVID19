@@ -54,7 +54,7 @@ counts_service = r'https://services6.arcgis.com/KaHXE9OkiB9e63uE/arcgis/rest/ser
 counts_by_day = r'https://services6.arcgis.com/KaHXE9OkiB9e63uE/arcgis/rest/services/Utah_COVID19_Case_Counts_by_LHD_by_Day/FeatureServer/0'
 
 
-# 1) UPDATE LATEST CASE COUNTS LAYER FROM MOST RECENT CSV
+#1) UPDATE LATEST CASE COUNTS LAYER FROM MOST RECENT CSV
 count = 0
 #             0                     1                      2                    3   
 fields = ['DISTNAME', 'COVID_Cases_Utah_Resident', 'COVID_Cases_Total', 'Hospitalizations',
@@ -106,7 +106,11 @@ fm_dict = {'DISTNAME': 'DISTNAME',
             'COVID_Total_Recoveries': 'COVID_Total_Recoveries',
             'COVID_New_Daily_Recoveries': 'COVID_New_Daily_Recoveries',
             'COVID_Total_Deaths': 'COVID_Total_Deaths',
-            'COVID_Deaths_Daily_Increase': 'COVID_Deaths_Daily_Increase'
+            'COVID_Deaths_Daily_Increase': 'COVID_Deaths_Daily_Increase',
+            'COVID_Cases_7_Day_Avg': 'COVID_Cases_7_Day_Avg',
+            'COVID_Hosp_7_Day_Avg': 'COVID_Hosp_7_Day_Avg',
+            'COVID_Deaths_7_Day_Avg': 'COVID_Deaths_7_Day_Avg',
+            'COVID_New_Daily_Hosp': 'COVID_New_Daily_Hosp'
             }
 
 for key in fm_dict:
@@ -121,7 +125,7 @@ for key in fm_dict:
 counts_fields = [f.name for f in arcpy.ListFields(counts_service)]
 by_day_fields = [f.name for f in arcpy.ListFields(counts_by_day)]
 
-# Append the new data
+# # Append the new data
 print('Appending recent case counts to counts by day table ...')
 arcpy.management.Append(counts_service, counts_by_day, "NO_TEST", field_mapping=fms)
 
@@ -131,7 +135,8 @@ print(by_day_fields)
 keep_fields = ['DISTNAME', 'COVID_Cases_Utah_Resident', 'COVID_Cases_Non_Utah_Resident',
                'COVID_Cases_Total', 'Day', 'Hospitalizations', 'Population',
                'Cases_per_100k', 'COVID_Cases_Daily_Increase', 'COVID_Total_Recoveries',
-               'COVID_New_Daily_Recoveries', 'COVID_Total_Deaths', 'COVID_Deaths_Daily_Increase']
+               'COVID_New_Daily_Recoveries', 'COVID_Total_Deaths', 'COVID_Deaths_Daily_Increase',
+               'COVID_Cases_7_Day_Avg', 'COVID_Hosp_7_Day_Avg', 'COVID_Deaths_7_Day_Avg', 'COVID_New_Daily_Hosp']
 
 # Delete in-memory table that will be used (if it already exists)
 if arcpy.Exists('in_memory\\temp_table'):
@@ -184,6 +189,18 @@ for key in hd_dict:
             hd_dict[key].at[i, 'COVID_Total_Recoveries'] = int(hd_dict[key].iloc[i]['COVID_Cases_Utah_Resident']) - int(hd_dict[key].iloc[i]['COVID_Total_Deaths']) - ( int(hd_dict[key].iloc[i]['COVID_Cases_Utah_Resident']) - int(hd_dict[key].iloc[i-21]['COVID_Cases_Utah_Resident']) )
         # Calculate daily recovery increase
         hd_dict[key].at[i, 'COVID_New_Daily_Recoveries'] = int(hd_dict[key].iloc[i]['COVID_Total_Recoveries']) - int(hd_dict[key].iloc[i-1]['COVID_Total_Recoveries'])
+        # Calculate daily hospitalization increase
+        hd_dict[key].at[i, 'COVID_New_Daily_Hosp'] = int(hd_dict[key].iloc[i]['Hospitalizations']) - int(hd_dict[key].iloc[i-1]['Hospitalizations'])
+
+
+# Calculate rolling averages by iterating through the dataframes
+for key in hd_dict:
+    # Calculate 7 day average for new daily cases
+    hd_dict[key]['COVID_Cases_7_Day_Avg'] = hd_dict[key]['COVID_Cases_Daily_Increase'].rolling(window=7).mean()
+    # Calculate 7 day average for new daily hospitalization
+    hd_dict[key]['COVID_Hosp_7_Day_Avg'] = hd_dict[key]['COVID_New_Daily_Hosp'].rolling(window=7).mean()
+    # Calculate 7 day average for new daily deaths
+    hd_dict[key]['COVID_Deaths_7_Day_Avg'] = hd_dict[key]['COVID_Deaths_Daily_Increase'].rolling(window=7).mean()
 
 
 # 4a) UPDATE ***ONLY TODAY'S ROW*** IN COUNTS BY DAY TABLE WITH NEW NUMBERS
@@ -192,7 +209,9 @@ table_count = 0
 #                   0         1                2                           3   
 table_fields = ['DISTNAME', 'Day', 'COVID_Cases_Daily_Increase', 'COVID_Total_Recoveries',
           #            4                         5                          6
-          'COVID_New_Daily_Recoveries', 'COVID_Total_Deaths', 'COVID_Deaths_Daily_Increase']
+          'COVID_New_Daily_Recoveries', 'COVID_Total_Deaths', 'COVID_Deaths_Daily_Increase',
+          #             7                       8                       9                       10
+          'COVID_Cases_7_Day_Avg', 'COVID_Hosp_7_Day_Avg', 'COVID_Deaths_7_Day_Avg', 'COVID_New_Daily_Hosp']
 with arcpy.da.UpdateCursor(counts_by_day, table_fields) as ucursor:
     print("Looping through rows to make updates ...")
     for row in ucursor:
@@ -209,19 +228,25 @@ with arcpy.da.UpdateCursor(counts_by_day, table_fields) as ucursor:
             row[4] = temp_df.iloc[0]['COVID_New_Daily_Recoveries']
             row[5] = temp_df.iloc[0]['COVID_Total_Deaths']
             row[6] = temp_df.iloc[0]['COVID_Deaths_Daily_Increase']
+            row[7] = temp_df.iloc[0]['COVID_Cases_7_Day_Avg']
+            row[8] = temp_df.iloc[0]['COVID_Hosp_7_Day_Avg']
+            row[9] = temp_df.iloc[0]['COVID_Deaths_7_Day_Avg']
+            row[10] = temp_df.iloc[0]['COVID_New_Daily_Hosp']
             table_count += 1
             ucursor.updateRow(row)
 print(f'Total count of COVID Counts By Day Table updates is: {table_count}') 
 
 
-# 4b) UPDATE ***ALL ROWS*** IN COUNTS BY DAY TABLE WITH NEW NUMBERS
-# Should only need to run this once to make the calculations for all previous rows
-# start_time = time.time()
+# # 4b) UPDATE ***ALL ROWS*** IN COUNTS BY DAY TABLE WITH NEW NUMBERS
+# # Should only need to run this once to make the calculations for all previous rows
+# # start_time = time.time()
 # table_count = 0
 # #                   0         1                2                           3   
 # table_fields = ['DISTNAME', 'Day', 'COVID_Cases_Daily_Increase', 'COVID_Total_Recoveries',
 #           #            4                         5                          6
-#           'COVID_New_Daily_Recoveries', 'COVID_Total_Deaths', 'COVID_Deaths_Daily_Increase']
+#           'COVID_New_Daily_Recoveries', 'COVID_Total_Deaths', 'COVID_Deaths_Daily_Increase',
+#           #           7                       8                       9                       10
+#          'COVID_Cases_7_Day_Avg', 'COVID_Hosp_7_Day_Avg', 'COVID_Deaths_7_Day_Avg', 'COVID_New_Daily_Hosp']
 # with arcpy.da.UpdateCursor(counts_by_day, table_fields) as ucursor:
 #     print("Looping through rows to make updates ...")
 #     for row in ucursor:
@@ -237,6 +262,10 @@ print(f'Total count of COVID Counts By Day Table updates is: {table_count}')
 #         row[4] = temp_df.iloc[0]['COVID_New_Daily_Recoveries']
 #         row[5] = temp_df.iloc[0]['COVID_Total_Deaths']
 #         row[6] = temp_df.iloc[0]['COVID_Deaths_Daily_Increase']
+#         row[7] = temp_df.iloc[0]['COVID_Cases_7_Day_Avg']
+#         row[8] = temp_df.iloc[0]['COVID_Hosp_7_Day_Avg']
+#         row[9] = temp_df.iloc[0]['COVID_Deaths_7_Day_Avg']
+#         row[10] = temp_df.iloc[0]['COVID_New_Daily_Hosp']
 #         table_count += 1
 #         ucursor.updateRow(row)
 # print(f'Total count of COVID Counts By Day Table updates is: {table_count}')      
@@ -249,7 +278,9 @@ lhd_count = 0
 #                  0            1                     2                           3   
 lhd_fields = ['DISTNAME', 'Date_Updated', 'COVID_Cases_Daily_Increase', 'COVID_Total_Recoveries',
           #            4                         5                          6
-          'COVID_New_Daily_Recoveries', 'COVID_Total_Deaths', 'COVID_Deaths_Daily_Increase']
+          'COVID_New_Daily_Recoveries', 'COVID_Total_Deaths', 'COVID_Deaths_Daily_Increase',
+          #             7                       8                       9                       10
+          'COVID_Cases_7_Day_Avg', 'COVID_Hosp_7_Day_Avg', 'COVID_Deaths_7_Day_Avg', 'COVID_New_Daily_Hosp']
 with arcpy.da.UpdateCursor(counts_service, lhd_fields) as ucursor:
     print("Looping through rows to make updates ...")
     for row in ucursor:
@@ -263,6 +294,10 @@ with arcpy.da.UpdateCursor(counts_service, lhd_fields) as ucursor:
         row[4] = temp_row.loc['COVID_New_Daily_Recoveries']
         row[5] = temp_row.loc['COVID_Total_Deaths']
         row[6] = temp_row.loc['COVID_Deaths_Daily_Increase']
+        row[7] = temp_row.loc['COVID_Cases_7_Day_Avg']
+        row[8] = temp_row.loc['COVID_Hosp_7_Day_Avg']
+        row[9] = temp_row.loc['COVID_Deaths_7_Day_Avg']
+        row[10] = temp_row.loc['COVID_New_Daily_Hosp']
         lhd_count += 1
         ucursor.updateRow(row)
 print(f'Total count of COVID updates by local health district: {lhd_count}')      

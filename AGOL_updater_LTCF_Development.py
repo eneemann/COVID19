@@ -100,10 +100,10 @@ work_dir = r'C:\COVID19'
 # TEST layer
 # ltcf_service = r'https://services1.arcgis.com/99lidPhWCzftIe9K/arcgis/rest/services/EMN_LTCF_Data_TEST/FeatureServer/0'
 
-# LIVE data layer (LTCF_Data)
-ltcf_service = r'https://services6.arcgis.com/KaHXE9OkiB9e63uE/arcgis/rest/services/LTCF_Data/FeatureServer/273'
-# LTCF Events by Day
-ltcf_events_by_day = r'https://services6.arcgis.com/KaHXE9OkiB9e63uE/arcgis/rest/services/LTCF_Events_by_Day/FeatureServer/0'
+# LTCF Development layer (version 2)
+ltcf_service = r'https://services6.arcgis.com/KaHXE9OkiB9e63uE/arcgis/rest/services/LTCF_Data_Development_V2/FeatureServer/0'
+# LTCF Events by Day Development
+ltcf_events_by_day = r'https://services6.arcgis.com/KaHXE9OkiB9e63uE/arcgis/rest/services/LTCF_Events_by_Day_Development_XY/FeatureServer/0'
 
 # 1) Load CSV data with updates, prep, and clean up the data
 # Read in updates from CSV that was exported from Google Sheet (LTCF_Data)
@@ -649,12 +649,12 @@ print(f'Total count of LTCF Events By Day Table updates is: {table_count}')
 #         # select row of dataframe where date == date in hosted 'ltcf events by day' table
 #         d = row[0].strftime('%Y-%m-%d')
 #         temp_df = day_df.loc[day_df['Date'] == d].reset_index()
-#         # row[1] = temp_df.iloc[0]['Today_Positive_Residents']
-#         # row[2] = temp_df.iloc[0]['Today_Deceased_Residents']
-#         # row[3] = temp_df.iloc[0]['Today_Positive_HCWs']
-#         # row[4] = temp_df.iloc[0]['Today_Outbreaks']
-#         # row[5] = temp_df.iloc[0]['Today_Outbreaks_Resolved']
-#         # row[6] = temp_df.iloc[0]['Today_Investigations']
+#         row[1] = temp_df.iloc[0]['Today_Positive_Residents']
+#         row[2] = temp_df.iloc[0]['Today_Deceased_Residents']
+#         row[3] = temp_df.iloc[0]['Today_Positive_HCWs']
+#         row[4] = temp_df.iloc[0]['Today_Outbreaks']
+#         row[5] = temp_df.iloc[0]['Today_Outbreaks_Resolved']
+#         row[6] = temp_df.iloc[0]['Today_Investigations']
 #         row[7] = temp_df.iloc[0]['Today_Fac_Active_Cases_7_Day_Av']
 #         row[8] = temp_df.iloc[0]['Today_Outbreaks_7_Day_Avg']
 #         row[9] = temp_df.iloc[0]['Today_Outbreaks_Res_7_Day_Avg']
@@ -716,9 +716,11 @@ for d in dates:
 # all rows because some cases and death data are back filled over time.
 cfr_table_count = 0
 #                   0           1                           2
-cfr_table_fields = ['Date', 'Total_Positive_Residents', 'UT_Cumulative_Cases', 
-                #       3                          4                                5               6
-                'UT_Cumulative_Deaths', 'Corrected_Res_Cumulative_Deaths', 'LTCF_DeathRatio', 'UT_DeathRatio']
+cfr_table_fields = ['Date', 'Total_Positive_Residents', 'Statewide_Cases', 
+                #       3                   4                   5                               6
+                'Statewide_New_Daily_Cases', 'Res_Mortality_Ratio', 'Cumulative_Cases', 'Cumulative_Deaths',
+               #        7                   8                    9                              10
+               'LTCF_DeathRatio', 'UT_DeathRatio', 'Corrected_Res_Death', 'Correct_Cumulative_Res_Death']
                 
 
 with arcpy.da.UpdateCursor(ltcf_events_by_day, cfr_table_fields) as ucursor:
@@ -734,14 +736,19 @@ with arcpy.da.UpdateCursor(ltcf_events_by_day, cfr_table_fields) as ucursor:
             d = row[0].strftime('%Y-%m-%d')
             temp_df = combined.loc[combined['date_x'] == d].reset_index()
             row[2] = temp_df.iloc[0]['Cumulative_cases']
-            row[3] = temp_df.iloc[0]['Cumulative_deaths']
-            row[4] = temp_df.iloc[0]['LTCF_Cumulative_Deaths']
-            row[5] = temp_df.iloc[0]['LTCF_Cumulative_Deaths'] / row[1] * 100
-            row[6] = temp_df.iloc[0]['Cumulative_deaths'] / temp_df.iloc[0]['Cumulative_cases'] * 100
+            row[3] = temp_df.iloc[0]['cases']
+            row[4] = temp_df.iloc[0]['LTCF_Cumulative_Deaths'] / row[1] * 100
+            row[5] = temp_df.iloc[0]['Cumulative_cases']
+            row[6] = temp_df.iloc[0]['Cumulative_deaths']
+            row[7] = temp_df.iloc[0]['LTCF_Cumulative_Deaths'] / row[1] * 100
+            row[8] = temp_df.iloc[0]['Cumulative_deaths'] / temp_df.iloc[0]['Cumulative_cases'] * 100
+            row[9] = temp_df.iloc[0]['LTCF_Daily_Deaths']
+            row[10] = temp_df.iloc[0]['LTCF_Cumulative_Deaths']
             
             cfr_table_count += 1
             ucursor.updateRow(row)
 print(f'Total count of LTCF Events By Day Table updates is: {cfr_table_count}')
+
 
 print("Script shutting down ...")
 # Stop timer and print end time in UTC
